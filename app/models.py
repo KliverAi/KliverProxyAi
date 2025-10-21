@@ -83,6 +83,10 @@ class ChatRequest(BaseModel):
         le=2.0,
         description="Temperature for response generation (0.0 to 2.0). Higher values make output more random."
     )
+    output_schema: Optional[dict] = Field(
+        None,
+        description="Schema for structured output (field_name: field_type pairs)"
+    )
 
     def get_provider(self) -> AIProvider:
         """
@@ -135,6 +139,20 @@ class ChatRequest(BaseModel):
                     ],
                     "provider": "claude",
                     "temperature": 1.0
+                },
+                {
+                    "model": "gpt-4",
+                    "api_key": "sk-...",
+                    "messages": [
+                        {"role": "user", "content": "Analyze this product: iPhone 15"}
+                    ],
+                    "output_schema": {
+                        "product_name": "string",
+                        "category": "string", 
+                        "price_range": "string",
+                        "rating": "string"
+                    },
+                    "temperature": 0.7
                 }
             ]
         }

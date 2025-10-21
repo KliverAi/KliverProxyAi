@@ -10,6 +10,7 @@ from langchain_core.messages import (
     HumanMessage,
     AIMessage,
 )
+from pydantic import BaseModel, create_model, Field
 from dotenv import load_dotenv
 import os
 
@@ -196,29 +197,37 @@ async def root():
     "/api/chat",
     response_model=AiResponse,
     status_code=status.HTTP_200_OK,
-    summary="Send chat messages to AI",
-    description="Process a list of chat messages using OpenAI, Google Gemini, or Anthropic Claude models"
+    summary="Send chat messages to AI (supports structured output)",
+    description="Process a list of chat messages using OpenAI, Google Gemini, or Anthropic Claude models. If 'schema' field is provided, returns structured JSON output."
 )
 async def chat(request: ChatRequest) -> AiResponse:
     """
     Process chat messages using LangChain with OpenAI, Google Gemini, or Anthropic Claude.
+    Automatically detects if structured output is requested based on the presence of 'schema' field.
 
     Args:
-        request: ChatRequest containing model, api_key, messages, and optional provider
+        request: ChatRequest containing model, api_key, messages, and optional provider and schema
 
     Returns:
         AiResponse with the AI's response and token usage information
+        If schema is provided, returns structured JSON output
 
     Raises:
         HTTPException: If there's an error processing the request
     """
     request_start_time = time.time()
 
+    # Detect if this is a structured output request
+    is_structured = request.output_schema is not None
+    request_type = "Structured chat" if is_structured else "Regular chat"
+
     logger.info("=" * 80)
-    logger.info("New chat request received")
+    logger.info(f"{request_type} request received")
     logger.info(f"Model: {request.model}")
     logger.info(f"Temperature: {request.temperature}")
     logger.info(f"Number of messages: {len(request.messages)}")
+    if is_structured:
+        logger.info(f"Schema fields: {list(request.output_schema.keys())}")
 
     try:
         # Always use default values from environment, ignoring request parameters
@@ -231,7 +240,8 @@ async def chat(request: ChatRequest) -> AiResponse:
             api_key=api_key,
             messages=request.messages,
             provider=request.provider,
-            temperature=request.temperature
+            temperature=request.temperature,
+            output_schema=request.output_schema
         )
 
         # Detect or get the provider
@@ -254,38 +264,71 @@ async def chat(request: ChatRequest) -> AiResponse:
 
         logger.info(f"Messages converted to LangChain format")
 
-        # Invoke the model with the messages
-        llm_start_time = time.time()
-        logger.info(f"Calling {provider.value} LLM...")
+        # Handle structured output if schema is provided
+        if is_structured:
+            # 🔹 1. Crear modelo Pydantic dinámicamente según el schema del request
+            fields = {
+                name: (str, Field(..., description=f"Field {name} of type {typ}"))
+                for name, typ in request.output_schema.items()
+            }
 
-        response = await llm.ainvoke(langchain_messages)
+            DynamicModel = create_model("DynamicStructuredModel", **fields)
+            logger.info(f"Dynamic Pydantic model created with fields: {list(fields.keys())}")
 
-        llm_end_time = time.time()
-        llm_duration = llm_end_time - llm_start_time
+            # 🔹 2. Usar .with_structured_output() que es el método recomendado
+            structured_llm = llm.with_structured_output(DynamicModel)
 
-        logger.info(f"LLM response received in {llm_duration:.3f}s")
-        logger.info(f"Response length: {len(response.content)} characters")
+            # Convert ChatMessage objects to LangChain message format  
+            langchain_messages = [
+                convert_to_langchain_message(msg)
+                for msg in request.messages
+            ]
 
-        # Extract token usage information
-        token_usage = extract_token_usage(response, provider)
-        logger.info(f"Token usage - Input: {token_usage.input_token_count}, Output: {token_usage.output_token_count}, Total: {token_usage.total_token_count}")
+            # 🔹 3. Ejecutar directamente con structured output
+            llm_start_time = time.time()
+            logger.info(f"Calling {provider.value} LLM with structured output...")
 
-        # Create the chat response
-        chat_response = ChatResponse(
-            content=response.content,
-            model=request.model,
-            role=ChatRole.ASSISTANT
-        )
+            response_obj = await structured_llm.ainvoke(langchain_messages)
+
+            llm_end_time = time.time()
+            llm_duration = llm_end_time - llm_start_time
+
+            logger.info(f"Structured LLM response received in {llm_duration:.3f}s")
+            logger.info(f"Parsed object type: {type(response_obj)}")
+
+            # For structured output, we create minimal token usage since we don't have access to raw response
+            token_usage = TokenAiServiceUsageInfo(input_tokens=0, output_tokens=0)
+
+            response_content = response_obj.model_dump_json(indent=2)
+
+        else:
+            # Regular chat flow
+            llm_start_time = time.time()
+            logger.info(f"Calling {provider.value} LLM...")
+
+            response = await llm.ainvoke(langchain_messages)
+
+            llm_end_time = time.time()
+            llm_duration = llm_end_time - llm_start_time
+
+            logger.info(f"LLM response received in {llm_duration:.3f}s")
+            logger.info(f"Response length: {len(response.content)} characters")
+
+            # Extract token usage information
+            token_usage = extract_token_usage(response, provider)
+            logger.info(f"Token usage - Input: {token_usage.input_token_count}, Output: {token_usage.output_token_count}, Total: {token_usage.total_token_count}")
+
+            response_content = response.content
 
         # Return the response with token usage
         request_duration = time.time() - request_start_time
         logger.info(f"Total request duration: {request_duration:.3f}s")
-        logger.info("Request completed successfully")
+        logger.info(f"{request_type} completed successfully")
         logger.info("=" * 80)
 
         return AiResponse(
             response=ChatResponse(
-                content=response.content,
+                content=response_content,
                 model=model,  # Use the actual model used
                 role=ChatRole.ASSISTANT
             ),
