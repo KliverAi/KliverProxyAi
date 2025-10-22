@@ -2,9 +2,7 @@ name: Build & Deploy to Kubernetes
 
 on:
   push:
-    branches: [main, dev, qa]
-  pull_request:
-    branches: [main, dev, qa]
+    branches: [main]  # Solo se ejecuta cuando se hace push (merge) a main
 
 jobs:
   build-and-deploy:
