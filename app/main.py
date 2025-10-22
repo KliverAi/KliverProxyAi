@@ -34,16 +34,26 @@ if APPLICATIONINSIGHTS_CONNECTION_STRING:
 else:
     print("⚠️ Application Insights connection string not found - telemetry disabled")
 
-# # 🔹 DISABLE LANGSMITH TRACING COMPLETELY
-# os.environ["LANGCHAIN_TRACING_V2"] = "false"
-# os.environ["LANGSMITH_TRACING"] = "false"
-# # Remove any potential LANGSMITH_API_KEY that might auto-enable tracing
-# if "LANGSMITH_API_KEY" in os.environ:
-#     del os.environ["LANGSMITH_API_KEY"]
+# Configure LangSmith (optional)
+LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
+LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT")
 
-# Default configuration from environment
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4")
-DEFAULT_API_KEY = os.getenv("DEFAULT_API_KEY", "")
+if LANGSMITH_TRACING and LANGSMITH_API_KEY:
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGSMITH_API_KEY"] = LANGSMITH_API_KEY
+    if LANGSMITH_PROJECT:
+        os.environ["LANGCHAIN_PROJECT"] = LANGSMITH_PROJECT
+        print(f"✅ LangSmith tracing enabled - Project: {LANGSMITH_PROJECT}")
+    else:
+        print("✅ LangSmith tracing enabled - Using default project")
+else:
+    # Disable LangSmith tracing
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
+    if "LANGSMITH_API_KEY" in os.environ:
+        del os.environ["LANGSMITH_API_KEY"]
+    print("⚠️ LangSmith tracing disabled")
+
 
 # Configure logging
 logging.basicConfig(
@@ -227,9 +237,9 @@ async def health_check():
         "version": "3.0.0",
         "timestamp": time.time(),
         "environment": {
-            "default_model": DEFAULT_MODEL,
-            "has_default_api_key": bool(DEFAULT_API_KEY),
-            "telemetry_enabled": bool(APPLICATIONINSIGHTS_CONNECTION_STRING)
+            "telemetry_enabled": bool(APPLICATIONINSIGHTS_CONNECTION_STRING),
+            "langsmith_tracing": LANGSMITH_TRACING,
+            "langsmith_project": LANGSMITH_PROJECT if LANGSMITH_TRACING else None
         },
         "providers": {
             "openai": "available",
@@ -278,22 +288,12 @@ async def chat(request: ChatRequest) -> AiResponse:
         logger.info(f"Schema fields: {list(request.output_schema.keys())}")
 
     try:
-        # Always use default values from environment, ignoring request parameters
-        model = DEFAULT_MODEL
-        api_key = DEFAULT_API_KEY
-
-        # Create a temporary request object for provider detection
-        temp_request = ChatRequest(
-            model=model,
-            api_key=api_key,
-            messages=request.messages,
-            provider=request.provider,
-            temperature=request.temperature,
-            output_schema=request.output_schema
-        )
+        # Use the model and api_key from the request directly
+        model = request.model
+        api_key = request.api_key
 
         # Detect or get the provider
-        provider = temp_request.get_provider()
+        provider = request.get_provider()
         logger.info(f"Provider detected: {provider.value}")
 
         # Initialize the appropriate LLM client
