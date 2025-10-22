@@ -91,24 +91,24 @@ jobs:
 
       - name: Update image tag in deployment
         run: |
-          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}-kliver-ai
+          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}
           kubectl set image deployment/$DEPLOYMENT_NAME \
             kliver-ai=rg.fr-par.scw.cloud/kliver/kliver-ai:${{ steps.tag.outputs.env }} \
             -n kliver-${{ steps.tag.outputs.env }}
 
       - name: Force redeploy with timestamp annotation
         run: |
-          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}-kliver-ai
+          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}
           kubectl patch deployment $DEPLOYMENT_NAME -n kliver-${{ steps.tag.outputs.env }} \
             -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"force-redeploy\":\"$(date +%s)\"}}}}}"
 
       - name: Wait for rollout to complete
         run: |
-          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}-kliver-ai
+          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}
           kubectl rollout status deployment/$DEPLOYMENT_NAME -n kliver-${{ steps.tag.outputs.env }} --timeout=300s
 
       - name: Verify deployment
         run: |
-          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}-kliver-ai
-          kubectl get pods -l app=$DEPLOYMENT_NAME -n kliver-${{ steps.tag.outputs.env }}
+          DEPLOYMENT_NAME=kliver-ai-${{ steps.tag.outputs.env }}
+          kubectl get pods -l app.kubernetes.io/name=kliver-ai,app.kubernetes.io/instance=$DEPLOYMENT_NAME -n kliver-${{ steps.tag.outputs.env }}
           echo "🚀 Successfully deployed kliver-ai:${{ steps.tag.outputs.tag }} to ${{ steps.tag.outputs.env }}"
