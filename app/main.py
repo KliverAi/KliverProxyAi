@@ -19,6 +19,21 @@ from app.models import ChatRequest, ChatResponse, ChatRole, AIProvider, AiRespon
 # Load environment variables from .env file
 load_dotenv()
 
+# Configure Azure Monitor Application Insights
+APPLICATIONINSIGHTS_CONNECTION_STRING = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+if APPLICATIONINSIGHTS_CONNECTION_STRING:
+    from azure.monitor.opentelemetry import configure_azure_monitor
+    configure_azure_monitor(
+        connection_string=APPLICATIONINSIGHTS_CONNECTION_STRING,
+        instrumentation_options={
+            "fastapi": {"enabled": True},
+            "requests": {"enabled": True},
+        }
+    )
+    print("✅ Application Insights configured successfully")
+else:
+    print("⚠️ Application Insights connection string not found - telemetry disabled")
+
 # # 🔹 DISABLE LANGSMITH TRACING COMPLETELY
 # os.environ["LANGCHAIN_TRACING_V2"] = "false"
 # os.environ["LANGSMITH_TRACING"] = "false"
@@ -27,8 +42,8 @@ load_dotenv()
 #     del os.environ["LANGSMITH_API_KEY"]
 
 # Default configuration from environment
-# DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4")
-# DEFAULT_API_KEY = os.getenv("DEFAULT_API_KEY", "")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4")
+DEFAULT_API_KEY = os.getenv("DEFAULT_API_KEY", "")
 
 # Configure logging
 logging.basicConfig(
@@ -191,13 +206,39 @@ def create_llm(provider: AIProvider, model: str, api_key: str, temperature: floa
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
-    logger.info("Health check endpoint accessed")
+    """Root endpoint"""
+    logger.info("Root endpoint accessed")
     return {
-        "status": "ok",
-        "message": "Kliver.AI Chat API is running",
-        "version": "3.0.0"
+        "service": "Kliver.AI Chat API",
+        "status": "running",
+        "version": "3.0.0",
+        "docs": "/docs"
     }
+
+
+@app.get("/health")
+async def health_check():
+    """Comprehensive health check endpoint"""
+    logger.info("Health check endpoint accessed")
+    
+    health_status = {
+        "status": "healthy",
+        "service": "Kliver.AI Chat API",
+        "version": "3.0.0",
+        "timestamp": time.time(),
+        "environment": {
+            "default_model": DEFAULT_MODEL,
+            "has_default_api_key": bool(DEFAULT_API_KEY),
+            "telemetry_enabled": bool(APPLICATIONINSIGHTS_CONNECTION_STRING)
+        },
+        "providers": {
+            "openai": "available",
+            "gemini": "available", 
+            "claude": "available"
+        }
+    }
+    
+    return health_status
 
 
 @app.post(
