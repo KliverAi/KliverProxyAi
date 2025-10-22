@@ -1,6 +1,6 @@
 import logging
 import time
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -22,22 +22,23 @@ load_dotenv()
 # Configure Azure Monitor Application Insights
 APPLICATIONINSIGHTS_CONNECTION_STRING = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
 if APPLICATIONINSIGHTS_CONNECTION_STRING:
-    from azure.monitor.opentelemetry import configure_azure_monitor
-    from opentelemetry import trace
-    
-    configure_azure_monitor(
-        connection_string=APPLICATIONINSIGHTS_CONNECTION_STRING,
-        instrumentation_options={
-            "fastapi": {"enabled": True},
-            "requests": {"enabled": True},
-            "logging": {"enabled": True},
-        }
-    )
-    
-    # Configure custom telemetry tracer
-    tracer = trace.get_tracer("kliver-ai")
-    
-    print("✅ Application Insights configured successfully with custom tracing")
+    try:
+        # Import the `configure_azure_monitor()` function from the `azure.monitor.opentelemetry` package.
+        from azure.monitor.opentelemetry import configure_azure_monitor
+        from opentelemetry import trace
+        
+        # Configure OpenTelemetry to use Azure Monitor with automatic distributed tracing
+        configure_azure_monitor(
+            logger_name="kliver.ai",  # Set the namespace for the logger - this is REQUIRED
+        )
+        
+        # Configure custom telemetry tracer
+        tracer = trace.get_tracer("kliver-ai")
+        
+        print("✅ Application Insights configured successfully with automatic distributed tracing")
+    except Exception as e:
+        print(f"❌ Failed to configure Application Insights: {e}")
+        tracer = None
 else:
     print("⚠️ Application Insights connection string not found - telemetry disabled")
     tracer = None
@@ -63,12 +64,19 @@ else:
     print("⚠️ LangSmith tracing disabled")
 
 
-# Configure logging
+# Configure logging - MUST match the logger_name in configure_azure_monitor
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+# Silence noisy loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(logging.WARNING)
+
+# This logger name MUST match the logger_name parameter in configure_azure_monitor
 logger = logging.getLogger("kliver.ai")
 
 app = FastAPI(
@@ -236,56 +244,13 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Comprehensive health check endpoint"""
-    start_time = time.time()
-    
-    if tracer:
-        with tracer.start_as_current_span("health_check") as span:
-            span.set_attribute("endpoint", "/health")
-            
-            health_status = {
-                "status": "healthy",
-                "service": "Kliver.AI Chat API",
-                "version": "3.0.0",
-                "timestamp": time.time(),
-                "environment": {
-                    "telemetry_enabled": bool(APPLICATIONINSIGHTS_CONNECTION_STRING),
-                    "langsmith_tracing": LANGSMITH_TRACING,
-                    "langsmith_project": LANGSMITH_PROJECT if LANGSMITH_TRACING else None
-                },
-                "providers": {
-                    "openai": "available",
-                    "gemini": "available", 
-                    "claude": "available"
-                }
-            }
-            
-            duration = time.time() - start_time
-            span.set_attribute("duration_seconds", duration)
-            
-            logger.info(f"🏥 Health check completed in {duration:.3f}s - Status: healthy")
-            return health_status
-    else:
-        health_status = {
-            "status": "healthy",
-            "service": "Kliver.AI Chat API",
-            "version": "3.0.0",
-            "timestamp": time.time(),
-            "environment": {
-                "telemetry_enabled": bool(APPLICATIONINSIGHTS_CONNECTION_STRING),
-                "langsmith_tracing": LANGSMITH_TRACING,
-                "langsmith_project": LANGSMITH_PROJECT if LANGSMITH_TRACING else None
-            },
-            "providers": {
-                "openai": "available",
-                "gemini": "available", 
-                "claude": "available"
-            }
-        }
-        
-        duration = time.time() - start_time
-        logger.info(f"🏥 Health check completed in {duration:.3f}s - Status: healthy")
-        return health_status
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "service": "Kliver.AI Chat API",
+        "version": "3.0.0",
+        "telemetry_enabled": bool(APPLICATIONINSIGHTS_CONNECTION_STRING)
+    }
 
 
 @app.post(
@@ -316,20 +281,6 @@ async def chat(request: ChatRequest) -> AiResponse:
     is_structured = request.output_schema is not None
     request_type = "Structured chat" if is_structured else "Regular chat"
 
-    logger.info("=" * 80)
-    logger.info(f"🆕 {request_type} request received")
-    logger.info(f"🤖 Model: {request.model}")
-    logger.info(f"🌡️  Temperature: {request.temperature}")
-    logger.info(f"💬 Number of messages: {len(request.messages)}")
-    if is_structured:
-        logger.info(f"📋 Schema fields: {list(request.output_schema.keys())}")
-    
-    # Log message preview (first 100 chars of last user message)
-    user_messages = [msg for msg in request.messages if msg.role == ChatRole.USER]
-    if user_messages:
-        last_user_msg = user_messages[-1].content[:100] + "..." if len(user_messages[-1].content) > 100 else user_messages[-1].content
-        logger.info(f"💭 Last user message preview: {last_user_msg}")
-
     try:
         # Use the model and api_key from the request directly
         model = request.model
@@ -337,7 +288,12 @@ async def chat(request: ChatRequest) -> AiResponse:
 
         # Detect or get the provider
         provider = request.get_provider()
-        logger.info(f"Provider detected: {provider.value}")
+        
+        # Simple request logging
+        request_info = f"🚀 {provider.value} {model} request"
+        if is_structured:
+            request_info += f" (structured: {list(request.output_schema.keys())})"
+        logger.info(request_info)
 
         # Initialize the appropriate LLM client
         llm = create_llm(
@@ -353,7 +309,7 @@ async def chat(request: ChatRequest) -> AiResponse:
             for msg in request.messages
         ]
 
-        logger.info(f"Messages converted to LangChain format")
+
 
         # Handle structured output if schema is provided
         if is_structured:
@@ -364,29 +320,17 @@ async def chat(request: ChatRequest) -> AiResponse:
             }
 
             DynamicModel = create_model("DynamicStructuredModel", **fields)
-            logger.info(f"🔧 Dynamic Pydantic model created with fields: {list(fields.keys())}")
-
-            # 🔹 2. Usar .with_structured_output() que es el método recomendado
             structured_llm = llm.with_structured_output(DynamicModel)
 
-            # Convert ChatMessage objects to LangChain message format  
-            langchain_messages = [
-                convert_to_langchain_message(msg)
-                for msg in request.messages
-            ]
-
-            # 🔹 3. Ejecutar directamente con structured output
             llm_start_time = time.time()
             
-            # Log structured call with Application Insights tracing
+            # Execute with telemetry
             if tracer:
                 with tracer.start_as_current_span(f"ai_structured_call_{provider.value}") as span:
                     span.set_attribute("ai.provider", provider.value)
                     span.set_attribute("ai.model", model)
                     span.set_attribute("ai.request_type", "structured")
-                    span.set_attribute("ai.schema_fields", str(list(fields.keys())))
                     
-                    logger.info(f"🚀 Calling {provider.value} LLM with structured output (model: {model})...")
                     response_obj = await structured_llm.ainvoke(langchain_messages)
                     
                     llm_end_time = time.time()
@@ -395,14 +339,11 @@ async def chat(request: ChatRequest) -> AiResponse:
                     span.set_attribute("ai.duration_seconds", llm_duration)
                     span.set_attribute("ai.success", True)
             else:
-                logger.info(f"🚀 Calling {provider.value} LLM with structured output (model: {model})...")
                 response_obj = await structured_llm.ainvoke(langchain_messages)
-                
                 llm_end_time = time.time()
                 llm_duration = llm_end_time - llm_start_time
 
-            logger.info(f"✅ Structured LLM response received in {llm_duration:.3f}s from {provider.value}")
-            logger.info(f"📊 Parsed object type: {type(response_obj).__name__}")
+            logger.info(f"✅ Structured response in {llm_duration:.2f}s")
 
             # For structured output, we create minimal token usage since we don't have access to raw response
             token_usage = TokenAiServiceUsageInfo(input_tokens=0, output_tokens=0)
@@ -413,15 +354,13 @@ async def chat(request: ChatRequest) -> AiResponse:
             # Regular chat flow
             llm_start_time = time.time()
             
-            # Log regular call with Application Insights tracing
+            # Execute with telemetry
             if tracer:
                 with tracer.start_as_current_span(f"ai_chat_call_{provider.value}") as span:
                     span.set_attribute("ai.provider", provider.value)
                     span.set_attribute("ai.model", model)
                     span.set_attribute("ai.request_type", "chat")
-                    span.set_attribute("ai.message_count", len(langchain_messages))
                     
-                    logger.info(f"🚀 Calling {provider.value} LLM (model: {model})...")
                     response = await llm.ainvoke(langchain_messages)
                     
                     llm_end_time = time.time()
@@ -431,40 +370,25 @@ async def chat(request: ChatRequest) -> AiResponse:
                     span.set_attribute("ai.response_length", len(response.content))
                     span.set_attribute("ai.success", True)
             else:
-                logger.info(f"🚀 Calling {provider.value} LLM (model: {model})...")
                 response = await llm.ainvoke(langchain_messages)
-                
                 llm_end_time = time.time()
                 llm_duration = llm_end_time - llm_start_time
 
-            logger.info(f"✅ LLM response received in {llm_duration:.3f}s from {provider.value}")
-            logger.info(f"📏 Response length: {len(response.content):,} characters")
-
             # Extract token usage information
             token_usage = extract_token_usage(response, provider)
-            logger.info(f"🪙 Token usage - Input: {token_usage.input_token_count:,}, Output: {token_usage.output_token_count:,}, Total: {token_usage.total_token_count:,}")
+            logger.info(f"✅ Response in {llm_duration:.2f}s | Tokens: {token_usage.input_token_count}→{token_usage.output_token_count} ({token_usage.total_token_count})")
 
             response_content = response.content
 
-        # Return the response with token usage
+        # Log final summary with telemetry
         request_duration = time.time() - request_start_time
         
-        # Log final metrics to Application Insights
         if tracer:
             with tracer.start_as_current_span("ai_request_summary") as span:
                 span.set_attribute("ai.total_duration_seconds", request_duration)
-                span.set_attribute("ai.llm_duration_seconds", llm_duration)
                 span.set_attribute("ai.provider", provider.value)
                 span.set_attribute("ai.model", model)
-                span.set_attribute("ai.request_type", "structured" if is_structured else "chat")
                 span.set_attribute("ai.total_tokens", token_usage.total_token_count)
-                span.set_attribute("ai.input_tokens", token_usage.input_token_count)
-                span.set_attribute("ai.output_tokens", token_usage.output_token_count)
-        
-        logger.info(f"⏱️  Total request duration: {request_duration:.3f}s (LLM: {llm_duration:.3f}s)")
-        logger.info(f"📈 Processing overhead: {(request_duration - llm_duration):.3f}s")
-        logger.info(f"✅ {request_type} completed successfully with {provider.value}")
-        logger.info("=" * 80)
 
         return AiResponse(
             response=ChatResponse(
@@ -483,13 +407,9 @@ async def chat(request: ChatRequest) -> AiResponse:
             with tracer.start_as_current_span("ai_request_error") as span:
                 span.set_attribute("ai.error_type", "ValueError")
                 span.set_attribute("ai.error_message", str(e))
-                span.set_attribute("ai.duration_seconds", request_duration)
-                span.set_attribute("ai.provider", provider.value if 'provider' in locals() else "unknown")
-                span.set_attribute("ai.model", model if 'model' in locals() else "unknown")
                 span.record_exception(e)
         
-        logger.error(f"❌ ValueError after {request_duration:.3f}s: {str(e)}")
-        logger.info("=" * 80)
+        logger.error(f"❌ ValueError: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid request: {str(e)}"
@@ -502,13 +422,9 @@ async def chat(request: ChatRequest) -> AiResponse:
             with tracer.start_as_current_span("ai_request_error") as span:
                 span.set_attribute("ai.error_type", type(e).__name__)
                 span.set_attribute("ai.error_message", str(e))
-                span.set_attribute("ai.duration_seconds", request_duration)
-                span.set_attribute("ai.provider", provider.value if 'provider' in locals() else "unknown")
-                span.set_attribute("ai.model", model if 'model' in locals() else "unknown")
                 span.record_exception(e)
         
-        logger.error(f"❌ {type(e).__name__} after {request_duration:.3f}s: {str(e)}", exc_info=True)
-        logger.info("=" * 80)
+        logger.error(f"❌ {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing chat request: {str(e)}"

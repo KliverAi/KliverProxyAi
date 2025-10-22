@@ -17,7 +17,7 @@ dependencies = [
     "langchain-anthropic (>=1.0.0,<2.0.0)",
     "python-dotenv (>=1.0.0,<2.0.0)",
     "dotenv (>=0.9.9,<0.10.0)",
-    "azure-monitor-opentelemetry (>=1.8.0,<2.0.0)"
+    "azure-monitor-opentelemetry"
 ]
 
 
