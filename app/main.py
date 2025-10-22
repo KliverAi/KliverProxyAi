@@ -19,6 +19,13 @@ from app.models import ChatRequest, ChatResponse, ChatRole, AIProvider, AiRespon
 # Load environment variables from .env file
 load_dotenv()
 
+# # 🔹 DISABLE LANGSMITH TRACING COMPLETELY
+# os.environ["LANGCHAIN_TRACING_V2"] = "false"
+# os.environ["LANGSMITH_TRACING"] = "false"
+# # Remove any potential LANGSMITH_API_KEY that might auto-enable tracing
+# if "LANGSMITH_API_KEY" in os.environ:
+#     del os.environ["LANGSMITH_API_KEY"]
+
 # Default configuration from environment
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4")
 DEFAULT_API_KEY = os.getenv("DEFAULT_API_KEY", "")
