@@ -1,0 +1,149 @@
+name: Test & Validate PR
+
+on:
+  pull_request:
+    branches: [main, dev, qa]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-ansi
+
+      - name: Code quality checks
+        run: |
+          echo "🔍 Running code quality checks..."
+          
+          # Check Python syntax
+          echo "📝 Checking Python syntax..."
+          poetry run python -m py_compile app/main.py
+          poetry run python -m py_compile app/models.py
+          poetry run python -m py_compile run.py
+          
+          # Check for common issues (you can add more tools like flake8, black, etc.)
+          echo "✅ Syntax check passed"
+
+      - name: Run tests
+        run: |
+          echo "🧪 Running tests..."
+          # poetry run pytest tests/ -v --cov=app --cov-report=xml
+          # For now, just run a basic import test
+          poetry run python -c "
+          import sys
+          sys.path.append('.')
+          from app.main import app
+          from app.models import ChatRequest, ChatResponse
+          print('✅ All imports successful')
+          "
+
+      - name: Test Docker build
+        run: |
+          echo "🐳 Testing Docker build..."
+          docker build -t kliverai-test .
+          echo "✅ Docker build successful"
+
+      - name: Validate API structure
+        run: |
+          echo "🔧 Validating API structure..."
+          poetry run python -c "
+          import sys
+          sys.path.append('.')
+          from app.main import app
+          from fastapi.openapi.utils import get_openapi
+          
+          # Generate OpenAPI schema to validate structure
+          openapi_schema = get_openapi(
+              title=app.title,
+              version=app.version,
+              description=app.description,
+              routes=app.routes,
+          )
+          
+          # Check if required endpoints exist
+          paths = openapi_schema.get('paths', {})
+          if '/api/chat' not in paths:
+              raise Exception('Missing /api/chat endpoint')
+          
+          print('✅ API structure validation passed')
+          "
+
+  docker-test:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t kliverai-pr-test .
+
+      - name: Test Docker container
+        run: |
+          echo "🚀 Testing Docker container..."
+          
+          # Start container in background
+          docker run -d --name kliverai-test -p 8000:8000 \
+            -e DEFAULT_MODEL="gpt-4" \
+            -e DEFAULT_API_KEY="test-key" \
+            kliverai-pr-test
+          
+          # Wait for container to start
+          sleep 10
+          
+          # Test if container is responding
+          if docker ps | grep kliverai-test; then
+            echo "✅ Container is running"
+          else
+            echo "❌ Container failed to start"
+            docker logs kliverai-test
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop kliverai-test
+          docker rm kliverai-test
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [test, docker-test]
+    if: always()
+
+    steps:
+      - name: PR validation summary
+        run: |
+          if [[ "${{ needs.test.result }}" == "success" && "${{ needs.docker-test.result }}" == "success" ]]; then
+            echo "✅ All PR validations passed!"
+            echo "🚀 Ready to merge and deploy"
+          else
+            echo "❌ PR validation failed"
+            echo "Test result: ${{ needs.test.result }}"
+            echo "Docker test result: ${{ needs.docker-test.result }}"
+            exit 1
+          fi

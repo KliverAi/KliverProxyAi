@@ -27,8 +27,8 @@ load_dotenv()
 #     del os.environ["LANGSMITH_API_KEY"]
 
 # Default configuration from environment
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4")
-DEFAULT_API_KEY = os.getenv("DEFAULT_API_KEY", "")
+# DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4")
+# DEFAULT_API_KEY = os.getenv("DEFAULT_API_KEY", "")
 
 # Configure logging
 logging.basicConfig(
