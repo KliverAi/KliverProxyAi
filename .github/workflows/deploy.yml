@@ -3,6 +3,8 @@ name: Build & Deploy to Kubernetes
 on:
   push:
     branches: [main, dev, qa]
+  pull_request:
+    branches: [main, dev, qa]
 
 jobs:
   build-and-deploy:
