@@ -59,6 +59,17 @@ jobs:
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          
+          # List available contexts
+          echo "Available contexts:"
+          kubectl config get-contexts
+          
+          # Set the correct context (use the first available context)
+          CONTEXT=$(kubectl config get-contexts -o name | head -n 1)
+          echo "Setting context to: $CONTEXT"
+          kubectl config use-context $CONTEXT
+          
+          # Verify current context
           kubectl config current-context
 
       - name: Update image tag in deployment
