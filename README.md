@@ -1,338 +1,175 @@
 # Kliver.AI Chat API
 
-API REST construida con FastAPI y LangChain para interactuar con modelos de OpenAI, Google Gemini y Anthropic Claude.
+A FastAPI-based REST API for chat interactions with multiple AI providers (OpenAI, Google Gemini, Anthropic Claude) using LangChain.
 
-## Características
+## Features
 
-- Endpoint POST `/api/chat` para enviar mensajes al modelo de IA
-- **Soporte multi-proveedor**: OpenAI, Google Gemini y Anthropic Claude
-- **Detección automática** del proveedor basado en el nombre del modelo
-- **Logging completo**: Monitoreo de requests, tiempos de respuesta y errores
-- Clases pythonic equivalentes a ChatMessage de C#
-- Integración con LangChain para manejo de mensajes
-- CORS habilitado para llamadas desde C#
-- Validación de datos con Pydantic
+- **Multi-Provider Support**: OpenAI GPT, Google Gemini, Anthropic Claude
+- **Structured Output**: JSON schema-based responses for structured data
+- **Token Usage Tracking**: Detailed token consumption metrics
+- **Telemetry**: Azure Application Insights integration
+- **Docker Support**: Containerized deployment with Docker Compose
+- **Kubernetes Ready**: CI/CD pipeline for Scaleway Kubernetes deployment
 
-## Requisitos
+## Quick Start
 
-- Python >= 3.12
-- Poetry
-
-## Instalación
-
-Las dependencias ya están instaladas con Poetry. Si necesitas reinstalarlas:
+### Local Development
 
 ```bash
+# Install dependencies
 poetry install
-```
 
-## Uso
-
-### Iniciar el servidor
-
-```bash
+# Run the server
 poetry run python run.py
 ```
 
-El servidor estará disponible en `http://localhost:8000`
+Server runs at `http://localhost:8000` with docs at `http://localhost:8000/docs`.
 
-### Documentación interactiva
+### Docker
 
-Una vez iniciado el servidor, puedes acceder a:
+```bash
+# Build and run with Docker Compose
+docker-compose up --build
+```
 
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## Endpoint
+## API Usage
 
 ### POST /api/chat
 
-Envía una lista de mensajes al modelo de IA y obtiene una respuesta.
+Send messages to AI models with automatic provider detection.
 
-#### Ejemplo con OpenAI (GPT-4):
-
-**Request Body:**
-
+**Request:**
 ```json
 {
   "model": "gpt-4",
   "api_key": "sk-...",
   "messages": [
-    {
-      "role": "system",
-      "content": "You are a helpful assistant."
-    },
-    {
-      "role": "user",
-      "content": "Hello, how are you?"
-    }
+    {"role": "user", "content": "Hello!"}
   ],
   "temperature": 0.7
 }
 ```
 
-#### Ejemplo con Google Gemini:
-
-**Request Body:**
-
+**Response:**
 ```json
 {
-  "model": "gemini-pro",
-  "api_key": "AIza...",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Hola, ¿cómo estás?"
-    }
-  ],
-  "temperature": 0.9
+  "response": {
+    "content": "Hello! How can I help you today?",
+    "model": "gpt-4",
+    "role": "assistant"
+  },
+  "token_usage": {
+    "input_token_count": 10,
+    "output_token_count": 15,
+    "total_token_count": 25
+  }
 }
 ```
 
-**Nota:** El proveedor se detecta automáticamente según el nombre del modelo. También puedes especificarlo explícitamente:
+### Structured Output
+
+Add `output_schema` for JSON responses:
 
 ```json
 {
-  "model": "gemini-pro",
-  "api_key": "AIza...",
-  "provider": "gemini",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Hello!"
-    }
-  ],
-  "temperature": 1.0
-}
-```
-
-#### Ejemplo con Anthropic Claude:
-
-**Request Body:**
-
-```json
-{
-  "model": "claude-3-7-sonnet-20250219",
-  "api_key": "sk-ant-...",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Hola, ¿cómo estás?"
-    }
-  ],
-  "temperature": 1.0
-}
-```
-
-#### Ejemplo con GPT-5 (Modelo de Razonamiento):
-
-**Request Body:**
-
-```json
-{
-  "model": "gpt-5",
-  "api_key": "sk-proj-...",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Resuelve este problema: Si tengo 3 manzanas y compro el doble, ¿cuántas tengo?"
-    }
-  ]
-}
-```
-
-**Nota:** Los modelos GPT-5 y o-series usan configuración especial automática:
-- `reasoning_effort="minimal"` (hardcodeado)
-- `verbosity="low"` (hardcodeado, solo GPT-5)
-- `temperature=1.0` (forzado, ignora el valor del request)
-
-Ver [examples_gpt5_reasoning.md](examples_gpt5_reasoning.md) para más ejemplos.
-
-**Response (para todos los proveedores):**
-
-```json
-{
-  "content": "I'm doing well, thank you! How can I help you today?",
   "model": "gpt-4",
-  "role": "assistant"
+  "api_key": "sk-...",
+  "messages": [{"role": "user", "content": "Analyze this product"}],
+  "output_schema": {
+    "name": "string",
+    "category": "string",
+    "rating": "string"
+  }
 }
 ```
 
-## Roles disponibles
+## Supported Models
 
-- `system`: Mensajes del sistema
-- `user`: Mensajes del usuario
-- `assistant`: Respuestas del asistente
-- `tool`: Mensajes de herramientas
-- `developer`: Mensajes del desarrollador
-
-## Parámetro Temperature
-
-El parámetro `temperature` controla la aleatoriedad de las respuestas del modelo:
-
-- **0.0 - 0.3**: Respuestas muy deterministas y enfocadas. Ideal para tareas que requieren precisión (código, análisis, datos)
-- **0.4 - 0.7**: Balance entre creatividad y coherencia (valor por defecto: 0.7)
-- **0.8 - 1.2**: Respuestas más creativas y variadas. Bueno para escritura creativa, brainstorming
-- **1.3 - 2.0**: Máxima aleatoriedad y creatividad. Puede producir respuestas menos coherentes
-
-**Ejemplo:**
-```json
-{
-  "temperature": 0.2  // Para respuestas precisas y consistentes
-}
-```
-
-## Ejemplo de llamada desde C#
-
-```csharp
-using System.Net.Http.Json;
-
-public class ChatRole
-{
-    public const string System = "system";
-    public const string User = "user";
-    public const string Assistant = "assistant";
-    public const string Tool = "tool";
-    public const string Developer = "developer";
-}
-
-public record ChatMessage(string Role, string Content);
-
-public record ChatRequest(
-    string Model,
-    string ApiKey,
-    List<ChatMessage> Messages,
-    string? Provider = null,  // Optional: "openai" or "gemini"
-    double Temperature = 0.7  // Optional: 0.0 to 2.0
-);
-
-public record ChatResponse(
-    string Content,
-    string Model,
-    string Role
-);
-
-// Uso con OpenAI
-var httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:8000") };
-
-var request = new ChatRequest(
-    Model: "gpt-4.1",
-    ApiKey: "sk-...",
-    Messages: new List<ChatMessage>
-    {
-        new ChatMessage("system", "You are a helpful assistant."),
-        new ChatMessage("user", "Hello!")
-    }
-);
-
-var response = await httpClient.PostAsJsonAsync("/api/chat", request);
-var chatResponse = await response.Content.ReadFromJsonAsync<ChatResponse>();
-
-Console.WriteLine(chatResponse.Content);
-
-// Uso con Google Gemini
-var geminiRequest = new ChatRequest(
-    Model: "gemini-pro",
-    ApiKey: "AIza...",
-    Messages: new List<ChatMessage>
-    {
-        new ChatMessage("user", "Hola!")
-    }
-);
-
-var geminiResponse = await httpClient.PostAsJsonAsync("/api/chat", geminiRequest);
-var geminiChatResponse = await geminiResponse.Content.ReadFromJsonAsync<ChatResponse>();
-
-Console.WriteLine(geminiChatResponse.Content);
-
-// Uso con Anthropic Claude
-var claudeRequest = new ChatRequest(
-    Model: "claude-3-7-sonnet-20250219",
-    ApiKey: "sk-ant-...",
-    Messages: new List<ChatMessage>
-    {
-        new ChatMessage("user", "Hola!")
-    },
-    Temperature: 1.0
-);
-
-var claudeResponse = await httpClient.PostAsJsonAsync("/api/chat", claudeRequest);
-var claudeChatResponse = await claudeResponse.Content.ReadFromJsonAsync<ChatResponse>();
-
-Console.WriteLine(claudeChatResponse.Content);
-```
-
-## Modelos disponibles
-
-### OpenAI - Modelos de Razonamiento (GPT-5 y o-series)
-- `gpt-5` (último modelo con razonamiento avanzado)
-- `gpt-5-mini` (balance entre costo y capacidad)
-- `gpt-5-nano` (más rápido y económico)
-- `o1` (modelo de razonamiento profundo)
-- `o1-mini` (razonamiento rápido)
-- `o3`, `o4-mini` (próximas generaciones)
-
-**Nota:** Los modelos de razonamiento usan configuración especial hardcodeada:
-- `reasoning_effort="minimal"` (razonamiento mínimo para máxima velocidad)
-- `verbosity="low"` (respuestas cortas y concisas - solo GPT-5)
-- `temperature=1.0` (forzado automáticamente)
-
-### OpenAI - Modelos Estándar
-- `gpt-4.1` (lanzado en 2025)
-- `gpt-4.1-mini` (más económico)
-- `gpt-4.1-nano` (el más rápido y barato)
-- `gpt-4`
-- `gpt-4-turbo-preview`
-- `gpt-3.5-turbo`
+### OpenAI
+- `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`
+- `gpt-4`, `gpt-4-turbo-preview`
+- `gpt-5`, `gpt-5-mini`, `gpt-5-nano` (reasoning models)
+- `o1`, `o1-mini`, `o3`, `o4-mini`
 
 ### Google Gemini
-- `gemini-pro`
-- `gemini-1.5-pro`
-- `gemini-1.5-flash`
-- `gemini-2.0-flash-exp`
+- `gemini-pro`, `gemini-1.5-pro`, `gemini-1.5-flash`, `gemini-2.0-flash-exp`
 
 ### Anthropic Claude
-- `claude-3-7-sonnet-20250219` (nuevo, con modo de pensamiento extendido)
-- `claude-3-5-sonnet-20241022`
-- `claude-3-5-haiku-20241022`
-- `claude-3-opus-20240229`
-- `claude-3-sonnet-20240229`
-- `claude-3-haiku-20240307`
+- `claude-3-7-sonnet-20250219`, `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`
+- `claude-3-opus-20240229`, `claude-3-sonnet-20240229`, `claude-3-haiku-20240307`
 
-**Nota:** El proveedor se detecta automáticamente. Los modelos que comienzan con "gemini" usan Google AI, "gpt" usan OpenAI, y "claude" usan Anthropic.
+## Configuration
 
-## Logging
+Copy `.env.example` to `.env` and configure:
 
-La API incluye logging completo para monitorear todas las operaciones:
+```bash
+# API Keys
+OPENAI_API_KEY=your-openai-key
+GOOGLE_API_KEY=your-google-key
+ANTHROPIC_API_KEY=your-anthropic-key
 
-- **Información de cada request**: Modelo, temperatura, número de mensajes
-- **Proveedor detectado**: OpenAI, Gemini o Claude
-- **Métricas de performance**: Tiempo de respuesta del LLM y tiempo total del request
-- **Errores detallados**: Stack traces completos para debugging
+# Optional: Telemetry
+APPLICATIONINSIGHTS_CONNECTION_STRING=your-connection-string
 
-Ejemplo de logs (modelo estándar):
-```
-2025-10-20 19:30:15 - kliver.ai - INFO - New chat request received
-2025-10-20 19:30:15 - kliver.ai - INFO - Model: gpt-4.1
-2025-10-20 19:30:15 - kliver.ai - INFO - Provider detected: openai
-2025-10-20 19:30:15 - kliver.ai - INFO - Calling openai LLM...
-2025-10-20 19:30:18 - kliver.ai - INFO - LLM response received in 2.834s
-2025-10-20 19:30:18 - kliver.ai - INFO - Total request duration: 2.856s
+# Optional: Tracing
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-langsmith-key
 ```
 
-Ejemplo de logs (modelo de razonamiento GPT-5/o1):
-```
-2025-10-20 20:15:30 - kliver.ai - INFO - Model: gpt-5
-2025-10-20 20:15:30 - kliver.ai - INFO - Provider detected: openai
-2025-10-20 20:15:30 - kliver.ai - INFO - Detected reasoning model: gpt-5 - Using minimal reasoning_effort and low verbosity
-2025-10-20 20:15:30 - kliver.ai - INFO - GPT-5 model - Added verbosity='low'
-2025-10-20 20:15:30 - kliver.ai - INFO - Calling openai LLM...
-2025-10-20 20:15:33 - kliver.ai - INFO - LLM response received in 2.543s
+## Deployment
+
+### Docker Compose (Development)
+```bash
+docker-compose up -d
 ```
 
-## Notas
+### Kubernetes (Production)
+Automatic deployment via GitHub Actions on push to main branch.
 
-- El API key se envía en cada request por seguridad
-- CORS está habilitado para todas las origins (configura apropiadamente en producción)
-- El parámetro `temperature` es opcional (valor por defecto: 0.7)
-- El parámetro `provider` se detecta automáticamente según el modelo, pero puede especificarse explícitamente
+### Manual Kubernetes
+```bash
+kubectl apply -f k8s/
+```
+
+## Health Check
+
+```bash
+curl http://localhost:8000/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "service": "Kliver.AI Chat API",
+  "version": "3.0.0",
+  "telemetry_enabled": true
+}
+```
+
+## Development
+
+```bash
+# Install dev dependencies
+poetry install --with dev
+
+# Run tests
+pytest
+
+# Format code
+black .
+isort .
+```
+
+## Architecture
+
+- **FastAPI**: Web framework with automatic OpenAPI docs
+- **LangChain**: AI provider abstraction and message handling
+- **Pydantic**: Request/response validation
+- **Azure Application Insights**: Telemetry and monitoring
+- **Docker**: Containerization
+- **Kubernetes**: Orchestration
+
+## License
+
+MIT
