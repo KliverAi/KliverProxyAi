@@ -50,7 +50,7 @@ LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT")
 
 if LANGSMITH_TRACING and LANGSMITH_API_KEY:
     os.environ["LANGCHAIN_TRACING_V2"] = "true"
-    os.environ["LANGSMITH_API_KEY"] = LANGSMITH_API_KEY
+    os.environ["LANGCHAIN_API_KEY"] = LANGSMITH_API_KEY  # LangChain uses LANGCHAIN_API_KEY
     if LANGSMITH_PROJECT:
         os.environ["LANGCHAIN_PROJECT"] = LANGSMITH_PROJECT
         print(f"✅ LangSmith tracing enabled - Project: {LANGSMITH_PROJECT}")
@@ -59,8 +59,9 @@ if LANGSMITH_TRACING and LANGSMITH_API_KEY:
 else:
     # Disable LangSmith tracing
     os.environ["LANGCHAIN_TRACING_V2"] = "false"
-    if "LANGSMITH_API_KEY" in os.environ:
-        del os.environ["LANGSMITH_API_KEY"]
+    # Remove all LangSmith-related environment variables to ensure it's disabled
+    for key in ["LANGCHAIN_API_KEY", "LANGSMITH_API_KEY", "LANGCHAIN_PROJECT", "LANGSMITH_PROJECT", "LANGCHAIN_ENDPOINT"]:
+        os.environ.pop(key, None)
     print("⚠️ LangSmith tracing disabled")
 
 
@@ -313,14 +314,31 @@ async def chat(request: ChatRequest) -> AiResponse:
 
         # Handle structured output if schema is provided
         if is_structured:
-            # 🔹 1. Crear modelo Pydantic dinámicamente según el schema del request
-            fields = {
-                name: (str, Field(..., description=f"Field {name} of type {typ}"))
-                for name, typ in request.output_schema.items()
-            }
-
-            DynamicModel = create_model("DynamicStructuredModel", **fields)
-            structured_llm = llm.with_structured_output(DynamicModel)
+            # Extract the actual JSON Schema
+            # Support two formats:
+            # 1. Simple format: {"field1": "type1", "field2": "type2"}
+            # 2. JSON Schema format: {"name": "...", "output_schema": {"type": "object", "properties": {...}}}
+            json_schema = request.output_schema
+            schema_name = "StructuredOutput"
+            
+            # Check if this is a wrapped JSON Schema format
+            if "output_schema" in json_schema and isinstance(json_schema["output_schema"], dict):
+                # Extract the nested schema and metadata
+                schema_name = json_schema.get("name", "StructuredOutput")
+                json_schema = json_schema["output_schema"]
+            
+            # Ensure the schema has required top-level keys for OpenAI
+            if "title" not in json_schema:
+                json_schema["title"] = schema_name
+            if "description" not in json_schema:
+                json_schema["description"] = f"Structured output schema for {schema_name}"
+            
+            # For OpenAI, use the JSON Schema directly with method="json_schema"
+            # This bypasses Pydantic model conversion and uses native OpenAI structured outputs
+            structured_llm = llm.with_structured_output(
+                json_schema,
+                method="json_schema"
+            )
 
             llm_start_time = time.time()
             
@@ -348,7 +366,14 @@ async def chat(request: ChatRequest) -> AiResponse:
             # For structured output, we create minimal token usage since we don't have access to raw response
             token_usage = TokenAiServiceUsageInfo(input_tokens=0, output_tokens=0)
 
-            response_content = response_obj.model_dump_json(indent=2)
+            # Convert response to JSON string
+            # When using json_schema method, response is a dict
+            import json
+            if isinstance(response_obj, dict):
+                response_content = json.dumps(response_obj, indent=2)
+            else:
+                # Fallback for Pydantic models
+                response_content = response_obj.model_dump_json(indent=2)
 
         else:
             # Regular chat flow
