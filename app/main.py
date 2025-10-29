@@ -367,13 +367,16 @@ async def chat(request: ChatRequest) -> AiResponse:
             token_usage = TokenAiServiceUsageInfo(input_tokens=0, output_tokens=0)
 
             # Convert response to JSON string
-            # When using json_schema method, response is a dict
             import json
-            if isinstance(response_obj, dict):
+            if isinstance(response_obj, (dict, list)):
+                # JSON Schema method returns dict or list
                 response_content = json.dumps(response_obj, indent=2)
-            else:
-                # Fallback for Pydantic models
+            elif hasattr(response_obj, 'model_dump_json'):
+                # Pydantic models
                 response_content = response_obj.model_dump_json(indent=2)
+            else:
+                # Fallback: convert to string
+                response_content = str(response_obj)
 
         else:
             # Regular chat flow
