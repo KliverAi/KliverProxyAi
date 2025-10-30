@@ -179,7 +179,7 @@ class TokenAiServiceUsageInfo(BaseModel):
 class AiResponse(BaseModel):
     """Wrapper that contains both the AI response and token usage information"""
     response: "ChatResponse" = Field(..., description="The AI chat response")
-    token_usage: TokenAiServiceUsageInfo = Field(..., description="Token usage information")
+    token_usage: Optional[TokenAiServiceUsageInfo] = Field(None, description="Token usage information (None if not available)")
 
 
 class ChatResponse(BaseModel):

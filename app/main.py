@@ -363,8 +363,24 @@ async def chat(request: ChatRequest) -> AiResponse:
 
             logger.info(f"✅ Structured response in {llm_duration:.2f}s")
 
-            # For structured output, we create minimal token usage since we don't have access to raw response
-            token_usage = TokenAiServiceUsageInfo(input_tokens=0, output_tokens=0)
+            # Try to extract token usage from structured output
+            # Note: With json_schema method, token usage is typically not available
+            token_usage = None
+            
+            if hasattr(response_obj, 'usage_metadata') and response_obj.usage_metadata:
+                try:
+                    usage = response_obj.usage_metadata
+                    token_usage = TokenAiServiceUsageInfo(
+                        input_tokens=usage.get('input_tokens', 0),
+                        output_tokens=usage.get('output_tokens', 0),
+                        total_tokens=usage.get('total_tokens', 0)
+                    )
+                    logger.info(f"📊 Token usage: {token_usage.input_token_count}→{token_usage.output_token_count} ({token_usage.total_token_count})")
+                except Exception as e:
+                    logger.debug(f"Could not extract token usage from structured response: {e}")
+            
+            if token_usage is None:
+                logger.info("⚠️ Token usage not available for structured output")
 
             # Convert response to JSON string
             import json
@@ -416,7 +432,7 @@ async def chat(request: ChatRequest) -> AiResponse:
                 span.set_attribute("ai.total_duration_seconds", request_duration)
                 span.set_attribute("ai.provider", provider.value)
                 span.set_attribute("ai.model", model)
-                span.set_attribute("ai.total_tokens", token_usage.total_token_count)
+                span.set_attribute("ai.total_tokens", token_usage.total_token_count if token_usage else 0)
 
         return AiResponse(
             response=ChatResponse(
@@ -424,7 +440,7 @@ async def chat(request: ChatRequest) -> AiResponse:
                 model=model,  # Use the actual model used
                 role=ChatRole.ASSISTANT
             ),
-            token_usage=token_usage
+            token_usage=token_usage  # Will be None if not available
         )
 
     except ValueError as e:
