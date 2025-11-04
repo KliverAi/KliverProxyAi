@@ -339,6 +339,18 @@ async def chat(request: ChatRequest) -> AiResponse:
                 json_schema,
                 method="json_schema"
             )
+            
+            # Configure run name for LangSmith tracing
+            run_config = {
+                "run_name": f"{schema_name}",
+                "tags": [provider.value, model, "structured_output", schema_name],
+                "metadata": {
+                    "provider": provider.value,
+                    "model": model,
+                    "schema_name": schema_name,
+                    "temperature": request.temperature
+                }
+            }
 
             llm_start_time = time.time()
             
@@ -349,7 +361,7 @@ async def chat(request: ChatRequest) -> AiResponse:
                     span.set_attribute("ai.model", model)
                     span.set_attribute("ai.request_type", "structured")
                     
-                    response_obj = await structured_llm.ainvoke(langchain_messages)
+                    response_obj = await structured_llm.ainvoke(langchain_messages, config=run_config)
                     
                     llm_end_time = time.time()
                     llm_duration = llm_end_time - llm_start_time
@@ -357,7 +369,7 @@ async def chat(request: ChatRequest) -> AiResponse:
                     span.set_attribute("ai.duration_seconds", llm_duration)
                     span.set_attribute("ai.success", True)
             else:
-                response_obj = await structured_llm.ainvoke(langchain_messages)
+                response_obj = await structured_llm.ainvoke(langchain_messages, config=run_config)
                 llm_end_time = time.time()
                 llm_duration = llm_end_time - llm_start_time
 
@@ -396,6 +408,18 @@ async def chat(request: ChatRequest) -> AiResponse:
 
         else:
             # Regular chat flow
+            # Configure run name for LangSmith tracing
+            run_config = {
+                "run_name": f"{provider.value}_{model}_chat",
+                "tags": [provider.value, model, "chat"],
+                "metadata": {
+                    "provider": provider.value,
+                    "model": model,
+                    "temperature": request.temperature,
+                    "message_count": len(langchain_messages)
+                }
+            }
+            
             llm_start_time = time.time()
             
             # Execute with telemetry
@@ -405,7 +429,7 @@ async def chat(request: ChatRequest) -> AiResponse:
                     span.set_attribute("ai.model", model)
                     span.set_attribute("ai.request_type", "chat")
                     
-                    response = await llm.ainvoke(langchain_messages)
+                    response = await llm.ainvoke(langchain_messages, config=run_config)
                     
                     llm_end_time = time.time()
                     llm_duration = llm_end_time - llm_start_time
@@ -414,7 +438,7 @@ async def chat(request: ChatRequest) -> AiResponse:
                     span.set_attribute("ai.response_length", len(response.content))
                     span.set_attribute("ai.success", True)
             else:
-                response = await llm.ainvoke(langchain_messages)
+                response = await llm.ainvoke(langchain_messages, config=run_config)
                 llm_end_time = time.time()
                 llm_duration = llm_end_time - llm_start_time
 

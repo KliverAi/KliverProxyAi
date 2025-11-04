@@ -87,6 +87,10 @@ class ChatRequest(BaseModel):
         None,
         description="Schema for structured output (field_name: field_type pairs)"
     )
+    run_name: Optional[str] = Field(
+        None,
+        description="Optional custom name for LangSmith tracing run"
+    )
 
     def get_provider(self) -> AIProvider:
         """
