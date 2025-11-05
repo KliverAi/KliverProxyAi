@@ -210,7 +210,65 @@ async def _process_structured_chat(
     # Serialize response - handle LangChain's internal structure
     response_content = _serialize_structured_response(response_obj)
 
+    # Post-process to ensure integers are not converted to floats
+    response_content = _ensure_integer_types(response_content, json_schema)
+
     return response_content, token_usage
+
+
+def _ensure_integer_types(json_string: str, schema: dict) -> str:
+    """
+    Post-process JSON string to ensure fields defined as 'integer' in schema
+    are actually integers, not floats like 1.0
+    """
+    try:
+        # Parse JSON string to Python object
+        data = json.loads(json_string)
+
+        # Recursively fix integer types based on schema
+        fixed_data = _fix_integers_recursive(data, schema)
+
+        # Re-serialize to JSON
+        return json.dumps(fixed_data, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"Could not fix integer types in JSON: {e}")
+        return json_string
+
+
+def _fix_integers_recursive(data, schema):
+    """
+    Recursively traverse data and convert floats to ints where schema specifies integer type
+    """
+    if not isinstance(schema, dict):
+        return data
+
+    schema_type = schema.get('type')
+
+    # If this level is an object, process its properties
+    if schema_type == 'object' and isinstance(data, dict):
+        properties = schema.get('properties', {})
+        result = {}
+        for key, value in data.items():
+            if key in properties:
+                result[key] = _fix_integers_recursive(value, properties[key])
+            else:
+                result[key] = value
+        return result
+
+    # If this level is an array, process each item
+    elif schema_type == 'array' and isinstance(data, list):
+        items_schema = schema.get('items', {})
+        return [_fix_integers_recursive(item, items_schema) for item in data]
+
+    # If this level should be an integer, convert float to int
+    elif schema_type == 'integer':
+        if isinstance(data, float) and data.is_integer():
+            return int(data)
+        return data
+
+    # For other types, return as-is
+    else:
+        return data
 
 
 def _serialize_structured_response(response_obj) -> str:
@@ -229,7 +287,8 @@ def _serialize_structured_response(response_obj) -> str:
         if hasattr(response_obj[0], 'model_dump'):
             cleaned_list = []
             for item in response_obj:
-                item_dict = item.model_dump()
+                # Use mode='python' to preserve exact types (int stays int, not float)
+                item_dict = item.model_dump(mode='python')
                 # Extract from wrapper if present
                 if isinstance(item_dict, dict) and "args" in item_dict and "type" in item_dict:
                     logger.info(f"Extracting content from LangChain wrapper in list (type: {item_dict.get('type')})")
@@ -239,8 +298,8 @@ def _serialize_structured_response(response_obj) -> str:
 
             # If list has only one element after unwrapping, return just the element
             if len(cleaned_list) == 1:
-                return json.dumps(cleaned_list[0], indent=2)
-            return json.dumps(cleaned_list, indent=2)
+                return json.dumps(cleaned_list[0], indent=2, ensure_ascii=False)
+            return json.dumps(cleaned_list, indent=2, ensure_ascii=False)
 
         # Check if list contains plain dicts with args/type structure
         elif isinstance(response_obj[0], dict):
@@ -255,27 +314,28 @@ def _serialize_structured_response(response_obj) -> str:
 
             # If list has only one element after unwrapping, return just the element
             if len(cleaned_list) == 1:
-                return json.dumps(cleaned_list[0], indent=2)
-            return json.dumps(cleaned_list, indent=2)
+                return json.dumps(cleaned_list[0], indent=2, ensure_ascii=False)
+            return json.dumps(cleaned_list, indent=2, ensure_ascii=False)
 
         # Fallback for other list types
         else:
-            return json.dumps(response_obj, indent=2)
+            return json.dumps(response_obj, indent=2, ensure_ascii=False)
 
     # Handle plain dicts
     elif isinstance(response_obj, dict):
-        return json.dumps(response_obj, indent=2)
+        return json.dumps(response_obj, indent=2, ensure_ascii=False)
 
     # Handle Pydantic models
     elif hasattr(response_obj, 'model_dump'):
-        response_dict = response_obj.model_dump()
+        # Use mode='python' to preserve exact types
+        response_dict = response_obj.model_dump(mode='python')
 
         # Extract from wrapper if present
         if isinstance(response_dict, dict) and "args" in response_dict and "type" in response_dict:
             logger.info(f"Extracting content from LangChain wrapper (type: {response_dict.get('type')})")
-            return json.dumps(response_dict["args"], indent=2)
+            return json.dumps(response_dict["args"], indent=2, ensure_ascii=False)
         else:
-            return json.dumps(response_dict, indent=2)
+            return json.dumps(response_dict, indent=2, ensure_ascii=False)
 
     # Handle Pydantic models with model_dump_json
     elif hasattr(response_obj, 'model_dump_json'):
@@ -337,9 +397,17 @@ def _create_structured_llm(llm, json_schema: dict, provider: AIProvider):
         if provider == AIProvider.OPENAI:
             return llm.with_structured_output(json_schema, method="json_schema")
         elif provider == AIProvider.GEMINI:
+            # For Gemini, we need to be more explicit about structured output
+            # Try with strict mode first, then fallback to standard structured output
             try:
-                return llm.with_structured_output(json_schema)
-            except Exception:
+                # Gemini supports response_schema parameter for strict schema validation
+                # LangChain may support it via the default method
+                structured_llm = llm.with_structured_output(json_schema, include_raw=False)
+                logger.info("Using Gemini structured output with schema validation")
+                return structured_llm
+            except Exception as e:
+                logger.warning(f"Gemini strict schema failed, trying json_mode: {e}")
+                # Fallback to json_mode (less strict but more compatible)
                 return llm.with_structured_output(json_schema, method="json_mode")
         elif provider == AIProvider.CLAUDE:
             return llm.with_structured_output(json_schema)
