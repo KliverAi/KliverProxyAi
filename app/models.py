@@ -91,6 +91,10 @@ class ChatRequest(BaseModel):
         None,
         description="Optional custom name for LangSmith tracing run"
     )
+    context_cache_name: Optional[str] = Field(
+        None,
+        description="Optional name of a Gemini context cache to use for this chat"
+    )
 
     def get_provider(self) -> AIProvider:
         """

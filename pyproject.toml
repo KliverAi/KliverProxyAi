@@ -37,4 +37,8 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.dev.dependencies]
 httpx = "^0.28.1"
+pytest = "^8.4.2"
+pytest-asyncio = "^1.2.0"
+pytest-cov = "^7.0.0"
+reportlab = "^4.4.4"
 

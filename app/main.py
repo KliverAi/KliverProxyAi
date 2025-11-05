@@ -17,39 +17,27 @@ from dotenv import load_dotenv
 import os
 from typing import List, Optional
 
-# Assuming app.models now includes CacheCreationRequest, CacheCreationResponse, etc.
-# from app.models import ... 
-# NOTE: Replace 'from app.models import ...' with your actual imports from models.py
-# For this example, we'll assume the necessary models (ChatRequest, AIProvider, etc.) are available.
-# Since I don't have your models file, I must define dummy classes for compilation.
-# >>> START DUMMY MODEL DEFINITION (REPLACE WITH REAL IMPORTS) <<<
-class ChatRole(str, Enum): SYSTEM = "system"; USER = "user"; ASSISTANT = "assistant"; TOOL = "tool"; DEVELOPER = "developer"
-class AIProvider(str, Enum): OPENAI = "openai"; GEMINI = "gemini"; CLAUDE = "claude"
-class ChatMessage(BaseModel): role: ChatRole; content: str
-class TokenAiServiceUsageInfo(BaseModel):
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
+# Import models from app.models
+from app.models import (
+    ChatRole,
+    AIProvider,
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    AiResponse,
+    TokenAiServiceUsageInfo,
+)
 
-    @property
-    def input_token_count(self): return self.input_tokens
-    @property
-    def output_token_count(self): return self.output_tokens
-    @property
-    def total_token_count(self): return self.total_tokens
-class ChatResponse(BaseModel): content: str; model: str; role: ChatRole
-class AiResponse(BaseModel): response: ChatResponse; token_usage: Optional[TokenAiServiceUsageInfo]
-class CacheCreationRequest(BaseModel): api_key: str; model: str; contents_to_cache: List[str]; system_instruction: Optional[str]; display_name: Optional[str]
-class CacheCreationResponse(BaseModel): cache_name: str
-class ChatRequest(BaseModel): 
-    model: str; api_key: str; messages: List[ChatMessage]; provider: Optional[AIProvider]; temperature: float = 0.7; output_schema: Optional[dict] = None; context_cache_name: Optional[str] = None
-    def get_provider(self) -> AIProvider: 
-        model_lower = self.model.lower()
-        if self.provider: return self.provider
-        elif model_lower.startswith("gemini"): return AIProvider.GEMINI
-        elif model_lower.startswith("claude"): return AIProvider.CLAUDE
-        else: return AIProvider.OPENAI
-# >>> END DUMMY MODEL DEFINITION <<<
+# Additional models for cache endpoints
+class CacheCreationRequest(BaseModel):
+    api_key: str
+    model: str
+    contents_to_cache: List[str]
+    system_instruction: Optional[str] = None
+    display_name: Optional[str] = None
+
+class CacheCreationResponse(BaseModel):
+    cache_name: str
 
 
 # Load environment variables from .env file
@@ -278,7 +266,7 @@ async def health_check():
     response_model=CacheCreationResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new Gemini Context Cache resource for large documents.",
-    description="Processes large text content once and stores it for repeated, low-cost use in subsequent chat calls. Supports file uploads and text content."
+    description="Uploads files to Gemini File API and creates a context cache. Supports PDFs, documents, images, audio, video, and code files up to 5GB each."
 )
 async def create_context_cache_endpoint(
     api_key: str = Form(...),
@@ -286,7 +274,8 @@ async def create_context_cache_endpoint(
     system_instruction: Optional[str] = Form(None),
     display_name: Optional[str] = Form(None),
     contents_to_cache: Optional[str] = Form(None),  # JSON array of strings or single string
-    files: Optional[List[UploadFile]] = File(None)
+    files: Optional[List[UploadFile]] = File(None),
+    use_file_api: bool = Form(True)  # New parameter to choose upload method
 ) -> CacheCreationResponse:
     if model is None or not model.lower().startswith('gemini'):
          raise HTTPException(
@@ -296,8 +285,9 @@ async def create_context_cache_endpoint(
 
     logger.info(f"Attempting to create Context Cache: {display_name} using {model}...")
 
-    # NOTE: Google Gemini API supports context caching via the REST API
-    # We need to use the Google GenAI client to create a cache
+    # NOTE: Google Gemini API supports TWO methods for caching:
+    # 1. File API: Upload files to Google's servers (better for large files, supports more formats)
+    # 2. Text extraction: Extract text and send directly (faster but limited)
     # Reference: https://ai.google.dev/gemini-api/docs/caching
 
     try:
@@ -324,7 +314,24 @@ async def create_context_cache_endpoint(
                 content_list.append(contents_to_cache)
 
         # Process uploaded files
-        if files:
+        if files and use_file_api:
+            # METHOD 1: Use Gemini File API (RECOMMENDED)
+            logger.info(f"Using Gemini File API to upload {len(files)} files")
+
+            from app.file_manager import GeminiFileManager
+
+            file_manager = GeminiFileManager(api_key)
+            uploaded_files = await file_manager.upload_multiple_files(
+                files,
+                display_name_prefix=display_name
+            )
+
+            # Add uploaded file URIs to content
+            for uploaded_file in uploaded_files:
+                content_list.append(uploaded_file)  # File objects can be passed directly
+                logger.info(f"Added file to cache: {uploaded_file.display_name} (URI: {uploaded_file.uri})")
+
+        elif files:
             for file in files:
                 try:
                     # Read file content
@@ -491,7 +498,30 @@ async def chat(request: ChatRequest) -> AiResponse:
             if "title" not in json_schema: json_schema["title"] = schema_name
             if "description" not in json_schema: json_schema["description"] = f"Structured output schema for {schema_name}"
             
-            structured_llm = llm.with_structured_output(json_schema, method="json_schema")
+            # Different providers support different methods for structured output
+            try:
+                if provider == AIProvider.OPENAI:
+                    # OpenAI supports json_schema method
+                    structured_llm = llm.with_structured_output(json_schema, method="json_schema")
+                elif provider == AIProvider.GEMINI:
+                    # Gemini/Google models typically use json_mode or no method
+                    try:
+                        structured_llm = llm.with_structured_output(json_schema)
+                    except Exception:
+                        # Fallback to json_mode if default method fails
+                        structured_llm = llm.with_structured_output(json_schema, method="json_mode")
+                elif provider == AIProvider.CLAUDE:
+                    # Anthropic Claude uses default method
+                    structured_llm = llm.with_structured_output(json_schema)
+                else:
+                    # Default fallback
+                    structured_llm = llm.with_structured_output(json_schema)
+            except Exception as e:
+                logger.error(f"Failed to create structured output with provider {provider}: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Structured output not supported for {provider.value} with this configuration: {str(e)}"
+                )
             
             run_config = {
                 "run_name": f"{schema_name}",
