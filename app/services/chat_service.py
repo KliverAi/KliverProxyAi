@@ -146,15 +146,83 @@ async def _process_structured_chat(
     llm_duration = time.time() - llm_start_time
     logger.info(f"✅ Structured response in {llm_duration:.2f}s")
 
-    # Serialize response
-    if isinstance(response_obj, (dict, list)):
-        response_content = json.dumps(response_obj, indent=2)
-    elif hasattr(response_obj, 'model_dump_json'):
-        response_content = response_obj.model_dump_json(indent=2)
-    else:
-        response_content = str(response_obj)
+    # Serialize response - handle LangChain's internal structure
+    response_content = _serialize_structured_response(response_obj)
 
     return response_content, None  # Often unavailable for structured output
+
+
+def _serialize_structured_response(response_obj) -> str:
+    """
+    Serialize structured output response, handling LangChain's internal wrapper structure.
+
+    LangChain sometimes wraps responses in {"args": {...}, "type": "..."}
+    This function extracts the useful content from "args".
+    """
+    # Handle lists (Gemini often returns lists)
+    if isinstance(response_obj, list):
+        if not response_obj:
+            return json.dumps(response_obj, indent=2)
+
+        # Check if list contains Pydantic objects with args/type structure
+        if hasattr(response_obj[0], 'model_dump'):
+            cleaned_list = []
+            for item in response_obj:
+                item_dict = item.model_dump()
+                # Extract from wrapper if present
+                if isinstance(item_dict, dict) and "args" in item_dict and "type" in item_dict:
+                    logger.info(f"Extracting content from LangChain wrapper in list (type: {item_dict.get('type')})")
+                    cleaned_list.append(item_dict["args"])
+                else:
+                    cleaned_list.append(item_dict)
+
+            # If list has only one element after unwrapping, return just the element
+            if len(cleaned_list) == 1:
+                return json.dumps(cleaned_list[0], indent=2)
+            return json.dumps(cleaned_list, indent=2)
+
+        # Check if list contains plain dicts with args/type structure
+        elif isinstance(response_obj[0], dict):
+            cleaned_list = []
+            for item in response_obj:
+                # Extract from wrapper if present
+                if isinstance(item, dict) and "args" in item and "type" in item:
+                    logger.info(f"Extracting content from LangChain wrapper dict in list (type: {item.get('type')})")
+                    cleaned_list.append(item["args"])
+                else:
+                    cleaned_list.append(item)
+
+            # If list has only one element after unwrapping, return just the element
+            if len(cleaned_list) == 1:
+                return json.dumps(cleaned_list[0], indent=2)
+            return json.dumps(cleaned_list, indent=2)
+
+        # Fallback for other list types
+        else:
+            return json.dumps(response_obj, indent=2)
+
+    # Handle plain dicts
+    elif isinstance(response_obj, dict):
+        return json.dumps(response_obj, indent=2)
+
+    # Handle Pydantic models
+    elif hasattr(response_obj, 'model_dump'):
+        response_dict = response_obj.model_dump()
+
+        # Extract from wrapper if present
+        if isinstance(response_dict, dict) and "args" in response_dict and "type" in response_dict:
+            logger.info(f"Extracting content from LangChain wrapper (type: {response_dict.get('type')})")
+            return json.dumps(response_dict["args"], indent=2)
+        else:
+            return json.dumps(response_dict, indent=2)
+
+    # Handle Pydantic models with model_dump_json
+    elif hasattr(response_obj, 'model_dump_json'):
+        return response_obj.model_dump_json(indent=2)
+
+    # Fallback to string
+    else:
+        return str(response_obj)
 
 
 async def _process_regular_chat(
