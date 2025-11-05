@@ -1,11 +1,58 @@
 """Chat service for handling chat logic"""
 import time
 import json
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any, Dict
+from langchain.callbacks.base import BaseCallbackHandler
 
 from app.models import ChatRequest, ChatResponse, AiResponse, ChatRole, AIProvider, TokenAiServiceUsageInfo
 from app.services.llm_service import create_llm, convert_to_langchain_message, extract_token_usage
 from app.config import logger, tracer
+
+
+class TokenUsageCallbackHandler(BaseCallbackHandler):
+    """Callback handler to capture token usage from LLM responses"""
+
+    def __init__(self):
+        self.token_usage: Optional[TokenAiServiceUsageInfo] = None
+        self.provider: Optional[AIProvider] = None
+
+    def on_llm_end(self, response, **kwargs) -> None:
+        """Called when LLM finishes - extract token usage here"""
+        try:
+            # LangChain Response object has generations with llm_output
+            if hasattr(response, 'llm_output') and response.llm_output:
+                llm_output = response.llm_output
+
+                # Try to get usage from llm_output
+                if 'usage_metadata' in llm_output:
+                    usage = llm_output['usage_metadata']
+                    self.token_usage = TokenAiServiceUsageInfo(
+                        input_tokens=usage.get('input_tokens', 0),
+                        output_tokens=usage.get('output_tokens', 0),
+                        total_tokens=usage.get('total_tokens', 0)
+                    )
+                elif 'token_usage' in llm_output:
+                    usage = llm_output['token_usage']
+                    self.token_usage = TokenAiServiceUsageInfo(
+                        input_tokens=usage.get('prompt_tokens', 0),
+                        output_tokens=usage.get('completion_tokens', 0),
+                        total_tokens=usage.get('total_tokens', 0)
+                    )
+
+            # Try generations metadata
+            if not self.token_usage and hasattr(response, 'generations'):
+                for generation_list in response.generations:
+                    for generation in generation_list:
+                        if hasattr(generation, 'message') and hasattr(generation.message, 'usage_metadata'):
+                            usage = generation.message.usage_metadata
+                            self.token_usage = TokenAiServiceUsageInfo(
+                                input_tokens=usage.get('input_tokens', 0),
+                                output_tokens=usage.get('output_tokens', 0),
+                                total_tokens=usage.get('total_tokens', 0)
+                            )
+                            break
+        except Exception as e:
+            logger.debug(f"Error in callback extracting token usage: {e}")
 
 
 async def process_chat_request(request: ChatRequest) -> AiResponse:
@@ -129,6 +176,13 @@ async def _process_structured_chat(
 
     llm_start_time = time.time()
 
+    # Create callback handler to capture token usage
+    token_callback = TokenUsageCallbackHandler()
+    token_callback.provider = provider
+
+    # Add callback to run_config
+    run_config["callbacks"] = [token_callback]
+
     # Execute with telemetry
     if tracer:
         response_obj = await _execute_with_telemetry(
@@ -146,10 +200,17 @@ async def _process_structured_chat(
     llm_duration = time.time() - llm_start_time
     logger.info(f"✅ Structured response in {llm_duration:.2f}s")
 
+    # Get token usage from callback
+    token_usage = token_callback.token_usage
+    if token_usage and token_usage.total_token_count > 0:
+        logger.info(f"Token usage - Input: {token_usage.input_token_count}, Output: {token_usage.output_token_count}, Total: {token_usage.total_token_count}")
+    else:
+        logger.debug("Token usage not available for structured output")
+
     # Serialize response - handle LangChain's internal structure
     response_content = _serialize_structured_response(response_obj)
 
-    return response_content, None  # Often unavailable for structured output
+    return response_content, token_usage
 
 
 def _serialize_structured_response(response_obj) -> str:
