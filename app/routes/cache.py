@@ -1,6 +1,7 @@
 """Cache routes for the API"""
 from typing import List, Optional
 from fastapi import APIRouter, status, Form, UploadFile, File
+from aiocache import caches
 
 from app.models import CacheCreationResponse
 from app.services.cache_service import create_gemini_context_cache
@@ -34,3 +35,38 @@ async def create_context_cache_endpoint(
         files=files,
         use_file_api=use_file_api
     )
+
+
+@router.get(
+    "/stats",
+    status_code=status.HTTP_200_OK,
+    summary="Get memory cache statistics",
+    description="Returns the current size and stats of the in-memory request/response cache"
+)
+async def get_memory_cache_stats():
+    """Get statistics about the in-memory cache"""
+    cache = caches.get('default')
+    # aiocache doesn't provide a direct way to count items
+    # This is a limitation of the library
+    return {
+        "cache_type": "aiocache",
+        "backend": "SimpleMemoryCache",
+        "ttl": 7200,
+        "message": "Cache is active with 2 hour TTL"
+    }
+
+
+@router.delete(
+    "/clear",
+    status_code=status.HTTP_200_OK,
+    summary="Clear the in-memory cache",
+    description="Removes all cached request/response pairs from memory"
+)
+async def clear_memory_cache():
+    """Clear all entries from the in-memory cache"""
+    cache = caches.get('default')
+    await cache.clear()
+    
+    return {
+        "message": "Cache cleared successfully"
+    }

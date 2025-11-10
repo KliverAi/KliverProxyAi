@@ -1,7 +1,7 @@
 """Chat service for handling chat logic"""
 import time
 import json
-from typing import Tuple, Optional, Any, Dict
+from typing import Tuple, Optional, Any
 from langchain.callbacks.base import BaseCallbackHandler
 
 from app.models import ChatRequest, ChatResponse, AiResponse, ChatRole, AIProvider, TokenAiServiceUsageInfo

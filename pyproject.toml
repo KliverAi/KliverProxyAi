@@ -20,7 +20,9 @@ dependencies = [
     "azure-monitor-opentelemetry>=1.6.0",
     "google-generativeai (>=0.8.5,<0.9.0)",
     "python-multipart (>=0.0.20,<0.0.21)",
-    "pypdf2 (>=3.0.1,<4.0.0)"
+    "pypdf2 (>=3.0.1,<4.0.0)",
+    "fastapi-cache2 (>=0.2.2,<0.3.0)",
+    "aiocache (>=0.12.3,<0.13.0)"
 ]
 
 [tool.poetry]

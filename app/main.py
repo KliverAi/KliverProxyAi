@@ -1,10 +1,14 @@
 """Main FastAPI application"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from aiocache import Cache
 
 from app.config import settings, logger
 from app.routes import chat, cache
 
+
+# Configure aiocache
+Cache.MEMORY = Cache.MEMORY or Cache(Cache.MEMORY)
 
 # Create FastAPI app
 app = FastAPI(
