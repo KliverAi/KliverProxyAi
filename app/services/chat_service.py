@@ -26,10 +26,12 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
                 # Try to get usage from llm_output
                 if 'usage_metadata' in llm_output:
                     usage = llm_output['usage_metadata']
+                    thoughts_tokens = usage.get('thoughts_token_count') or usage.get('thoughtsTokenCount')
                     self.token_usage = TokenAiServiceUsageInfo(
                         input_tokens=usage.get('input_tokens', 0),
                         output_tokens=usage.get('output_tokens', 0),
-                        total_tokens=usage.get('total_tokens', 0)
+                        total_tokens=usage.get('total_tokens', 0),
+                        thoughts_tokens=thoughts_tokens
                     )
                 elif 'token_usage' in llm_output:
                     usage = llm_output['token_usage']
@@ -45,10 +47,12 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
                     for generation in generation_list:
                         if hasattr(generation, 'message') and hasattr(generation.message, 'usage_metadata'):
                             usage = generation.message.usage_metadata
+                            thoughts_tokens = usage.get('thoughts_token_count') or usage.get('thoughtsTokenCount')
                             self.token_usage = TokenAiServiceUsageInfo(
                                 input_tokens=usage.get('input_tokens', 0),
                                 output_tokens=usage.get('output_tokens', 0),
-                                total_tokens=usage.get('total_tokens', 0)
+                                total_tokens=usage.get('total_tokens', 0),
+                                thoughts_tokens=thoughts_tokens
                             )
                             break
         except Exception as e:
@@ -203,7 +207,10 @@ async def _process_structured_chat(
     # Get token usage from callback
     token_usage = token_callback.token_usage
     if token_usage and token_usage.total_token_count > 0:
-        logger.info(f"Token usage - Input: {token_usage.input_token_count}, Output: {token_usage.output_token_count}, Total: {token_usage.total_token_count}")
+        log_msg = f"Token usage - Input: {token_usage.input_token_count}, Output: {token_usage.output_token_count}, Total: {token_usage.total_token_count}"
+        if token_usage.thoughts_token_count:
+            log_msg += f", Thinking: {token_usage.thoughts_token_count}"
+        logger.info(log_msg)
     else:
         logger.debug("Token usage not available for structured output")
 
@@ -386,7 +393,12 @@ async def _process_regular_chat(
 
     llm_duration = time.time() - llm_start_time
     token_usage = extract_token_usage(response, provider)
-    logger.info(f"✅ Response in {llm_duration:.2f}s | Tokens: {token_usage.input_token_count}→{token_usage.output_token_count} ({token_usage.total_token_count})")
+
+    # Log token usage with thinking tokens if available
+    log_msg = f"✅ Response in {llm_duration:.2f}s | Tokens: {token_usage.input_token_count}→{token_usage.output_token_count} ({token_usage.total_token_count})"
+    if token_usage.thoughts_token_count:
+        log_msg += f" | Thinking: {token_usage.thoughts_token_count}"
+    logger.info(log_msg)
 
     return response.content, token_usage
 

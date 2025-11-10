@@ -32,10 +32,12 @@ def extract_token_usage(response, provider: AIProvider) -> TokenAiServiceUsageIn
         # Try usage_metadata first (standardized across providers)
         if hasattr(response, 'usage_metadata') and response.usage_metadata:
             usage = response.usage_metadata
+            thoughts_tokens = usage.get('thoughts_token_count') or usage.get('thoughtsTokenCount')
             return TokenAiServiceUsageInfo(
                 input_tokens=usage.get('input_tokens', 0),
                 output_tokens=usage.get('output_tokens', 0),
-                total_tokens=usage.get('total_tokens', 0)
+                total_tokens=usage.get('total_tokens', 0),
+                thoughts_tokens=thoughts_tokens
             )
 
         # Fallback to response_metadata for provider-specific formats
@@ -102,6 +104,16 @@ def create_llm(
     elif provider == AIProvider.GEMINI:
         # GEMINI LOGIC WITH CACHE
         # Always use ChatGoogleGenerativeAI with API key
+
+        # Configure thinking_budget for Pro models (not Flash or Lite)
+        model_lower = model.lower()
+        thinking_config = {}
+
+        if "pro" in model_lower and "flash" not in model_lower and "lite" not in model_lower:
+            # gemini-2.5-pro uses thinking budget for complex reasoning
+            thinking_config["thinking_budget"] = 8192  # Balanced budget for complex tasks
+            logger.info(f"Gemini Pro model detected - Setting thinking_budget: 8192 tokens")
+
         if context_cache_name:
             logger.info(f"Using Gemini Context Cache: {context_cache_name}")
             # When using cached content, we pass it via model_kwargs
@@ -109,13 +121,15 @@ def create_llm(
                 model=model,
                 google_api_key=api_key,
                 temperature=temperature,
-                cached_content=context_cache_name
+                cached_content=context_cache_name,
+                **thinking_config
             )
         else:
             return ChatGoogleGenerativeAI(
                 model=model,
                 google_api_key=api_key,
                 temperature=temperature,
+                **thinking_config
             )
 
     elif provider == AIProvider.CLAUDE:
