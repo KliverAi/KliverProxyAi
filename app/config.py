@@ -37,8 +37,13 @@ def configure_logging():
 
     # Silence noisy loggers
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
-    logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(logging.WARNING)
+    logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(logging.ERROR)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    
+    # Silence gRPC warnings
+    logging.getLogger("absl").setLevel(logging.ERROR)
 
     return logging.getLogger("kliver.ai")
 

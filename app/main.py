@@ -1,4 +1,21 @@
 """Main FastAPI application"""
+import os
+import sys
+import warnings
+
+# Silence gRPC/ALTS warnings BEFORE any imports
+os.environ['GRPC_ENABLE_FORK_SUPPORT'] = '0'
+os.environ['GRPC_VERBOSITY'] = 'ERROR'
+os.environ['GLOG_minloglevel'] = '2'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# Redirect stderr to devnull temporarily to suppress C++ level warnings
+import io
+_original_stderr = sys.stderr
+sys.stderr = io.StringIO()
+
+warnings.filterwarnings('ignore', category=Warning)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from aiocache import Cache
@@ -6,6 +23,8 @@ from aiocache import Cache
 from app.config import settings, logger
 from app.routes import chat, cache
 
+# Restore stderr after imports
+sys.stderr = _original_stderr
 
 # Configure aiocache
 Cache.MEMORY = Cache.MEMORY or Cache(Cache.MEMORY)
