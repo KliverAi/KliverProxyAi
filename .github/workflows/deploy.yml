@@ -2,9 +2,7 @@ name: Build & Deploy to Kubernetes
 
 on:
   push:
-    branches: [main, dev, qa]
-  pull_request:
-    branches: [main, dev, qa]
+    branches: [main]  # Solo se ejecuta cuando se hace push (merge) a main
 
 jobs:
   build-and-deploy:
@@ -19,22 +17,8 @@ jobs:
       - name: Set up Docker tag and environment
         id: tag
         run: |
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
-            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "env=prod" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref_name }}" == "dev" ]]; then
-            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "env=dev" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref_name }}" == "qa" ]]; then
-            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "env=qa" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "tag=pr-${{ github.event.number }}-${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "env=qa" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "env=dev" >> $GITHUB_OUTPUT
-          fi
+          echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "env=prod" >> $GITHUB_OUTPUT
 
       - name: Log in to Scaleway Container Registry
         run: |
