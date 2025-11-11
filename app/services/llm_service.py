@@ -1,4 +1,6 @@
 """LLM service for managing AI model interactions"""
+import mimetypes
+from typing import Union, List
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_anthropic import ChatAnthropic
@@ -8,8 +10,8 @@ from app.models import AIProvider, ChatRole, ChatMessage, TokenAiServiceUsageInf
 from app.config import logger
 
 
-def convert_to_langchain_message(chat_message: ChatMessage):
-    """Convert ChatMessage to LangChain message format"""
+def convert_to_langchain_message(chat_message: ChatMessage, provider: AIProvider):
+    """Convert ChatMessage to LangChain message format with file support"""
     role_to_message = {
         ChatRole.SYSTEM: SystemMessage,
         ChatRole.USER: HumanMessage,
@@ -21,6 +23,29 @@ def convert_to_langchain_message(chat_message: ChatMessage):
     if not message_class:
         raise ValueError(f"Unsupported role: {chat_message.role}")
 
+    # Si hay file_url, creamos contenido multimodal para Gemini
+    if chat_message.file_url and provider == AIProvider.GEMINI:
+        # Detectar MIME type si no está especificado
+        mime_type = chat_message.file_mime_type
+        if not mime_type:
+            mime_type, _ = mimetypes.guess_type(chat_message.file_url)
+            if not mime_type:
+                mime_type = "application/octet-stream"
+        
+        logger.info(f"📎 Adding file from URL: {chat_message.file_url} (type: {mime_type})")
+        
+        # Para Gemini, usamos el formato de contenido multimodal
+        # Ver: https://python.langchain.com/docs/integrations/chat/google_generative_ai
+        content = [
+            {"type": "text", "text": chat_message.content},
+            {
+                "type": "image_url" if mime_type.startswith("image/") else "file_url",
+                "file_url": chat_message.file_url,
+            }
+        ]
+        return message_class(content=content)
+    
+    # Si no hay archivo o no es Gemini, mensaje normal
     return message_class(content=chat_message.content)
 
 

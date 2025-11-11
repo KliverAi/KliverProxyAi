@@ -99,7 +99,7 @@ async def process_chat_request(request: ChatRequest) -> AiResponse:
 
     # Convert ChatMessage objects to LangChain message format
     langchain_messages = [
-        convert_to_langchain_message(msg)
+        convert_to_langchain_message(msg, provider)
         for msg in request.messages
     ]
 
