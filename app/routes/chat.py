@@ -44,7 +44,7 @@ router = APIRouter(prefix="/api", tags=["chat"])
     """,
     response_description="AI model response with content and metadata"
 )
-@cached(ttl=14200, serializer=PickleSerializer(), noself=True)  # 2 hours, auto key generation
+@cached(ttl=14200, serializer=PickleSerializer(), noself=True)  # 2 hours cache
 async def chat(chat_request: ChatRequest) -> AiResponse:
     """
     Process chat messages using LangChain with OpenAI, Google Gemini, or Anthropic Claude.
