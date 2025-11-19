@@ -1,0 +1,45 @@
+name: Deploy Azure
+
+on:
+  pull_request:
+    branches: [qa]
+
+jobs:
+  build-and-push-to-acr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Tag fijo para QA
+      - name: Set image tag
+        id: tag
+        run: |
+          echo "tag=qa" >> $GITHUB_OUTPUT
+
+      # Login Azure
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Login al ACR
+      - name: Login to ACR
+        run: |
+          az acr login --name kliveracrmuqifeddswzfo
+
+      # Build Docker
+      - name: Build Docker image
+        run: |
+          IMAGE="kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa"
+          echo "Building $IMAGE"
+          docker build -t $IMAGE .
+
+      # Push Docker
+      - name: Push Docker image
+        run: |
+          IMAGE="kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa"
+          echo "Pushing $IMAGE"
+          docker push $IMAGE
+          echo "🚀 Image published to Azure ACR: $IMAGE"

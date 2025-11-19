@@ -109,10 +109,10 @@ def create_llm(
     if provider == AIProvider.OPENAI:
         model_lower = model.lower()
         if model_lower.startswith("gpt-5") or model_lower.startswith("o1") or model_lower.startswith("o3") or model_lower.startswith("o4"):
-            logger.info(f"Detected reasoning model: {model} - Using minimal reasoning_effort and low verbosity")
-            model_kwargs = {"reasoning_effort": "minimal"}
-            if model_lower.startswith("gpt-5"):
-                model_kwargs["verbosity"] = "low"
+            logger.info(f"Detected reasoning model: {model} - Using low reasoning effort")
+            # OpenAI Reasoning models (o1, o3, o4, gpt-5) use "low", "medium", or "high" for reasoning effort
+            # Using "low" favors speed and economical token usage
+            model_kwargs = {"reasoning_effort": "low"}
             return ChatOpenAI(
                 model=model,
                 api_key=api_key,
