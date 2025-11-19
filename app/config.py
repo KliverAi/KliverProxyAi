@@ -13,7 +13,37 @@ class Settings:
     # Application info
     APP_NAME: str = "Kliver.AI Chat API"
     APP_VERSION: str = "3.0.0"
-    APP_DESCRIPTION: str = "API for chat interactions using LangChain with OpenAI, Google Gemini, and Anthropic Claude support"
+    APP_DESCRIPTION: str = """
+Multi-provider AI Chat API powered by LangChain.
+
+## 🚀 Features
+
+- **Multi-Provider Support**: OpenAI, Google Gemini, and Anthropic Claude
+- **Structured Output**: Get JSON responses with custom schemas
+- **Context Caching**: Efficient processing of large documents (Gemini)
+- **Auto Caching**: 2-hour TTL for request/response pairs
+- **File Processing**: Images, videos, audio, PDFs, and more
+- **Telemetry**: Azure Monitor Application Insights integration
+- **LangSmith Tracing**: Optional debugging and observability
+
+## 📚 Supported Models
+
+### OpenAI
+- gpt-4, gpt-4-turbo, gpt-3.5-turbo
+- o1-preview, o1-mini
+
+### Google Gemini
+- gemini-1.5-pro, gemini-1.5-flash
+- gemini-2.0-flash-exp
+
+### Anthropic Claude
+- claude-3-5-sonnet-20241022
+- claude-3-opus, claude-3-sonnet
+
+## 🔗 Quick Start
+
+Check the `/swagger` endpoint for interactive documentation and try out the API!
+    """
 
     # Azure Monitor Application Insights
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
