@@ -44,26 +44,14 @@ jobs:
           docker push $IMAGE
           echo "🚀 Image published to Azure ACR: $IMAGE"
 
-      # Get ACR credentials
-      - name: Get ACR credentials
-        id: acr-creds
-        run: |
-          ACR_USERNAME=$(az acr credential show --name kliveracrmuqifeddswzfo --query username -o tsv)
-          ACR_PASSWORD=$(az acr credential show --name kliveracrmuqifeddswzfo --query passwords[0].value -o tsv)
-          echo "::add-mask::$ACR_PASSWORD"
-          echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
-          echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
-
       # Update App Service with new container image
       - name: Update App Service
         run: |
           az webapp config container set \
             --name ${{ secrets.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --container-image-name kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa \
-            --container-registry-url https://kliveracrmuqifeddswzfo.azurecr.io \
-            --container-registry-user ${{ steps.acr-creds.outputs.username }} \
-            --container-registry-password ${{ steps.acr-creds.outputs.password }}
+            --docker-custom-image-name kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa \
+            --docker-registry-server-url https://kliveracrmuqifeddswzfo.azurecr.io
           echo "✅ App Service updated with new image"
           
       # Restart App Service to pull the new image
