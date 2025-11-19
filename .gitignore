@@ -78,7 +78,6 @@ instance/
 *.joblib
 *.h5
 *.hdf5
-models/
 checkpoints/
 data/
 datasets/
