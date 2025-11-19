@@ -89,6 +89,14 @@ class ChatRequest(BaseModel):
         None,
         description="Optional name of a Gemini context cache to use for this chat"
     )
+    azure_endpoint: Optional[str] = Field(
+        None,
+        description="Optional Azure OpenAI endpoint (e.g., 'https://your-resource.openai.azure.com/'). If provided, uses Azure OpenAI instead of standard OpenAI."
+    )
+    azure_api_version: Optional[str] = Field(
+        "2024-08-01-preview",
+        description="Azure OpenAI API version (default: 2024-08-01-preview)"
+    )
 
     def get_provider(self) -> AIProvider:
         """

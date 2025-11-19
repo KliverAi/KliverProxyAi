@@ -95,6 +95,8 @@ async def process_chat_request(request: ChatRequest) -> AiResponse:
         api_key=api_key,
         temperature=request.temperature,
         context_cache_name=request.context_cache_name,
+        azure_endpoint=request.azure_endpoint,
+        azure_api_version=request.azure_api_version,
     )
 
     # Convert ChatMessage objects to LangChain message format
