@@ -1,7 +1,7 @@
 name: Deploy Azure
 
 on:
-  pull_request:
+  push:
     branches: [qa]
 
 jobs:
@@ -43,3 +43,12 @@ jobs:
           echo "Pushing $IMAGE"
           docker push $IMAGE
           echo "🚀 Image published to Azure ACR: $IMAGE"
+
+      # Update Container App
+      - name: Update Container App
+        run: |
+          az containerapp update \
+            --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa
+          echo "✅ Container App updated with new image"
