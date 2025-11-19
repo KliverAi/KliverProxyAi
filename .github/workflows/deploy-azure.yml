@@ -1,7 +1,7 @@
 name: Deploy Azure
 
 on:
-  push:
+  pull_request:
     branches: [qa]
 
 jobs:
@@ -43,6 +43,12 @@ jobs:
           echo "Pushing $IMAGE"
           docker push $IMAGE
           echo "🚀 Image published to Azure ACR: $IMAGE"
+
+      # List Container Apps to debug
+      - name: List Container Apps
+        run: |
+          echo "Listing all Container Apps..."
+          az containerapp list --query "[].{name:name, resourceGroup:resourceGroup, location:location}" -o table
 
       # Update Container App
       - name: Update Container App
