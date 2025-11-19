@@ -1,7 +1,8 @@
 """LLM service for managing AI model interactions"""
 import mimetypes
+import os
 from typing import Union, List
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -99,7 +100,9 @@ def create_llm(
     model: str,
     api_key: str,
     temperature: float = 0.7,
-    context_cache_name: str | None = None
+    context_cache_name: str | None = None,
+    azure_endpoint: str | None = None,
+    azure_api_version: str = "2024-08-01-preview"
 ):
     """
     Create the appropriate LLM client based on the provider.
@@ -107,24 +110,42 @@ def create_llm(
     logger.info(f"Creating LLM client - Provider: {provider.value}, Model: {model}, Temperature: {temperature}, Cache: {context_cache_name}")
 
     if provider == AIProvider.OPENAI:
-        model_lower = model.lower()
-        if model_lower.startswith("gpt-5") or model_lower.startswith("o1") or model_lower.startswith("o3") or model_lower.startswith("o4"):
-            logger.info(f"Detected reasoning model: {model} - Using minimal reasoning_effort and low verbosity")
-            model_kwargs = {"reasoning_effort": "minimal"}
-            if model_lower.startswith("gpt-5"):
-                model_kwargs["verbosity"] = "low"
-            return ChatOpenAI(
-                model=model,
+        # Check if using Azure OpenAI (Azure Foundry)
+        # Priority: 1. Request parameter, 2. Environment variable
+        endpoint = azure_endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_version = azure_api_version or os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+        
+        if endpoint:
+            # Azure OpenAI usando AzureChatOpenAI
+            logger.info(f"Using Azure OpenAI - Endpoint: {endpoint}, Deployment: {model}, API Version: {api_version}")
+            
+            return AzureChatOpenAI(
+                azure_endpoint=endpoint,
+                azure_deployment=model,
                 api_key=api_key,
-                temperature=1.0,
-                model_kwargs=model_kwargs,
-            )
-        else:
-            return ChatOpenAI(
-                model=model,
-                api_key=api_key,
+                api_version=api_version,
                 temperature=temperature,
             )
+        else:
+            # Standard OpenAI API
+            model_lower = model.lower()
+            if model_lower.startswith("gpt-5") or model_lower.startswith("o1") or model_lower.startswith("o3") or model_lower.startswith("o4"):
+                logger.info(f"Detected reasoning model: {model} - Using low reasoning effort")
+                # OpenAI Reasoning models (o1, o3, o4, gpt-5) use "low", "medium", or "high" for reasoning effort
+                # Using "low" favors speed and economical token usage
+                model_kwargs = {"reasoning_effort": "low"}
+                return ChatOpenAI(
+                    model=model,
+                    api_key=api_key,
+                    temperature=1.0,
+                    model_kwargs=model_kwargs,
+                )
+            else:
+                return ChatOpenAI(
+                    model=model,
+                    api_key=api_key,
+                    temperature=temperature,
+                )
 
     elif provider == AIProvider.GEMINI:
         # GEMINI LOGIC WITH CACHE

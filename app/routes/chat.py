@@ -14,13 +14,50 @@ router = APIRouter(prefix="/api", tags=["chat"])
     "/chat",
     response_model=AiResponse,
     status_code=status.HTTP_200_OK,
-    summary="Send chat messages to AI (supports structured output)",
-    description="Process a list of chat messages using OpenAI, Google Gemini, or Anthropic Claude models. If 'schema' field is provided, returns structured JSON output."
+    summary="Send chat messages to AI models",
+    description="""
+    Process chat messages using multiple AI providers through LangChain.
+    
+    **Supported Models:**
+    - OpenAI: gpt-4, gpt-4-turbo, gpt-3.5-turbo, o1-preview, o1-mini
+    - Google Gemini: gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash-exp
+    - Anthropic Claude: claude-3-5-sonnet, claude-3-opus, claude-3-sonnet
+    
+    **Features:**
+    - ✅ Multi-turn conversations with message history
+    - ✅ Structured JSON output (provide a JSON schema)
+    - ✅ Automatic caching (2 hours TTL)
+    - ✅ Support for system messages and user/assistant roles
+    - ✅ Context caching for large documents (Gemini)
+    
+    **Example Request:**
+    ```json
+    {
+        "model": "gpt-4",
+        "api_key": "your-api-key",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant"},
+            {"role": "user", "content": "Hello!"}
+        ]
+    }
+    ```
+    """,
+    response_description="AI model response with content and metadata"
 )
 @cached(ttl=14200, serializer=PickleSerializer(), noself=True)  # 2 hours, auto key generation
 async def chat(chat_request: ChatRequest) -> AiResponse:
     """
     Process chat messages using LangChain with OpenAI, Google Gemini, or Anthropic Claude.
+    
+    Args:
+        chat_request: Chat request with model, API key, messages, and optional schema
+        
+    Returns:
+        AiResponse: Response containing AI-generated content and metadata
+        
+    Raises:
+        HTTPException 400: Invalid request parameters
+        HTTPException 500: Error processing chat request
     """
     try:
         return await process_chat_request(chat_request)
