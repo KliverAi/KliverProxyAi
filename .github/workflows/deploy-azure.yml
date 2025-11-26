@@ -1,7 +1,7 @@
 name: Deploy Azure
 
 on:
-  push:
+  pull_request:
     branches: [qa]
 
 jobs:
@@ -44,11 +44,20 @@ jobs:
           docker push $IMAGE
           echo "🚀 Image published to Azure ACR: $IMAGE"
 
-      # Update Container App
-      - name: Update Container App
+      # Update App Service with new container image
+      - name: Update App Service
         run: |
-          az containerapp update \
-            --name kliver-shared-ai-app \
-            --resource-group kliver-shared-rg \
-            --image kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa
-          echo "✅ Container App updated with new image"
+          az webapp config container set \
+            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --docker-custom-image-name kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa \
+            --docker-registry-server-url https://kliveracrmuqifeddswzfo.azurecr.io
+          echo "✅ App Service updated with new image"
+          
+      # Restart App Service to pull the new image
+      - name: Restart App Service
+        run: |
+          az webapp restart \
+            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
+          echo "✅ App Service restarted"

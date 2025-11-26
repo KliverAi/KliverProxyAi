@@ -107,7 +107,7 @@ def create_llm(
     """
     Create the appropriate LLM client based on the provider.
     """
-    logger.info(f"Creating LLM client - Provider: {provider.value}, Model: {model}, Temperature: {temperature}, Cache: {context_cache_name}")
+    logger.debug(f"Creating LLM client - Provider: {provider.value}, Model: {model}")
 
     if provider == AIProvider.OPENAI:
         # Check if using Azure OpenAI (Azure Foundry)
@@ -117,7 +117,7 @@ def create_llm(
         
         if endpoint:
             # Azure OpenAI usando AzureChatOpenAI
-            logger.info(f"Using Azure OpenAI - Endpoint: {endpoint}, Deployment: {model}, API Version: {api_version}")
+            logger.debug(f"Using Azure OpenAI - Endpoint: {endpoint}, Deployment: {model}")
             
             return AzureChatOpenAI(
                 azure_endpoint=endpoint,
@@ -125,6 +125,8 @@ def create_llm(
                 api_key=api_key,
                 api_version=api_version,
                 temperature=temperature,
+                timeout=30.0,  # 30s timeout
+                max_retries=1,  # Reducir reintentos para fallar rápido
             )
         else:
             # Standard OpenAI API
@@ -139,12 +141,16 @@ def create_llm(
                     api_key=api_key,
                     temperature=1.0,
                     model_kwargs=model_kwargs,
+                    timeout=30.0,
+                    max_retries=1,
                 )
             else:
                 return ChatOpenAI(
                     model=model,
                     api_key=api_key,
                     temperature=temperature,
+                    timeout=30.0,
+                    max_retries=1,
                 )
 
     elif provider == AIProvider.GEMINI:
@@ -158,16 +164,18 @@ def create_llm(
         if "pro" in model_lower and "flash" not in model_lower and "lite" not in model_lower:
             # gemini-2.5-pro uses thinking budget for complex reasoning
             thinking_config["thinking_budget"] = 8192  # Balanced budget for complex tasks
-            logger.info(f"Gemini Pro model detected - Setting thinking_budget: 8192 tokens")
+            logger.debug(f"Gemini Pro model detected - Setting thinking_budget: 8192 tokens")
 
         if context_cache_name:
-            logger.info(f"Using Gemini Context Cache: {context_cache_name}")
+            logger.debug(f"Using Gemini Context Cache: {context_cache_name}")
             # When using cached content, we pass it via model_kwargs
             return ChatGoogleGenerativeAI(
                 model=model,
                 google_api_key=api_key,
                 temperature=temperature,
                 cached_content=context_cache_name,
+                timeout=30.0,
+                max_retries=1,
                 **thinking_config
             )
         else:
@@ -175,6 +183,8 @@ def create_llm(
                 model=model,
                 google_api_key=api_key,
                 temperature=temperature,
+                timeout=30.0,
+                max_retries=1,
                 **thinking_config
             )
 
@@ -183,6 +193,8 @@ def create_llm(
             model=model,
             api_key=api_key,
             temperature=temperature,
+            timeout=30.0,
+            max_retries=1,
         )
     else:
         logger.error(f"Unsupported provider requested: {provider}")
