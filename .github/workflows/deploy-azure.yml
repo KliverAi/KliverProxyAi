@@ -1,8 +1,8 @@
 name: Deploy Azure
 
 on:
-  pull_request:
-    branches: [qa]
+  push:
+    branches: [qa, main]
 
 jobs:
   build-and-push-to-acr:
@@ -12,11 +12,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Tag fijo para QA
+      # Determinar tag según la rama
       - name: Set image tag
         id: tag
         run: |
-          echo "tag=qa" >> $GITHUB_OUTPUT
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "tag=qa" >> $GITHUB_OUTPUT
+          fi
 
       # Login Azure
       - name: Azure Login
@@ -27,19 +31,19 @@ jobs:
       # Login al ACR
       - name: Login to ACR
         run: |
-          az acr login --name kliveracrmuqifeddswzfo
+          az acr login --name kliverairegistry
 
       # Build Docker
       - name: Build Docker image
         run: |
-          IMAGE="kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa"
+          IMAGE="kliverairegistry.azurecr.io/kliver-proxy-ai:${{ steps.tag.outputs.tag }}"
           echo "Building $IMAGE"
           docker build -t $IMAGE .
 
       # Push Docker
       - name: Push Docker image
         run: |
-          IMAGE="kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa"
+          IMAGE="kliverairegistry.azurecr.io/kliver-proxy-ai:${{ steps.tag.outputs.tag }}"
           echo "Pushing $IMAGE"
           docker push $IMAGE
           echo "🚀 Image published to Azure ACR: $IMAGE"
@@ -50,8 +54,8 @@ jobs:
           az webapp config container set \
             --name ${{ secrets.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --docker-custom-image-name kliveracrmuqifeddswzfo.azurecr.io/kliver-proxy-ai:qa \
-            --docker-registry-server-url https://kliveracrmuqifeddswzfo.azurecr.io
+            --docker-custom-image-name kliverairegistry.azurecr.io/kliver-proxy-ai:${{ steps.tag.outputs.tag }} \
+            --docker-registry-server-url https://kliverairegistry.azurecr.io
           echo "✅ App Service updated with new image"
           
       # Restart App Service to pull the new image
