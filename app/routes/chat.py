@@ -64,13 +64,14 @@ async def chat(chat_request: ChatRequest) -> AiResponse:
         return await process_chat_request(chat_request)
 
     except ValueError as e:
-        logger.error(f"❌ ValueError: {str(e)}")
+        logger.exception("❌ ValueError while processing chat request")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid request: {str(e)}"
         )
     except Exception as e:
-        logger.error(f"❌ {type(e).__name__}: {str(e)}")
+        # Capture full stack trace to aid debugging
+        logger.exception(f"❌ Unexpected {type(e).__name__} while processing chat request")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing chat request: {str(e)}"

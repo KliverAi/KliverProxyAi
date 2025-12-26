@@ -125,7 +125,7 @@ def create_llm(
                 api_key=api_key,
                 api_version=api_version,
                 temperature=temperature,
-                timeout=30.0,  # 30s timeout
+                timeout=240.0,  # 4 minutes timeout
                 max_retries=1,  # Reducir reintentos para fallar rápido
             )
         else:
@@ -141,7 +141,7 @@ def create_llm(
                     api_key=api_key,
                     temperature=1.0,
                     model_kwargs=model_kwargs,
-                    timeout=30.0,
+                    timeout=240.0,
                     max_retries=1,
                 )
             else:
@@ -149,7 +149,7 @@ def create_llm(
                     model=model,
                     api_key=api_key,
                     temperature=temperature,
-                    timeout=30.0,
+                    timeout=240.0,
                     max_retries=1,
                 )
 
@@ -166,6 +166,19 @@ def create_llm(
             thinking_config["thinking_budget"] = 8192  # Balanced budget for complex tasks
             logger.debug(f"Gemini Pro model detected - Setting thinking_budget: 8192 tokens")
 
+        # Default parameters for Gemini models optimized for speed and quality
+        # Based on official Google documentation:
+        # - candidate_count: 1 (single response for faster generation)
+        # - top_k: 40 (balanced - not too restrictive)
+        # - top_p: 0.95 (Google's recommended default)
+        # Note: temperature is NOT set here to allow model's default (1.0 for Gemini 3)
+        gemini_defaults = {
+            "candidate_count": 1,
+            "top_k": 40,
+            "top_p": 0.95
+        }
+        logger.debug(f"Applying Gemini defaults optimized for speed: {gemini_defaults}")
+
         if context_cache_name:
             logger.debug(f"Using Gemini Context Cache: {context_cache_name}")
             # When using cached content, we pass it via model_kwargs
@@ -174,18 +187,20 @@ def create_llm(
                 google_api_key=api_key,
                 temperature=temperature,
                 cached_content=context_cache_name,
-                timeout=30.0,
+                timeout=240.0,
                 max_retries=1,
-                **thinking_config
+                **thinking_config,
+                **gemini_defaults
             )
         else:
             return ChatGoogleGenerativeAI(
                 model=model,
                 google_api_key=api_key,
                 temperature=temperature,
-                timeout=30.0,
+                timeout=240.0,
                 max_retries=1,
-                **thinking_config
+                **thinking_config,
+                **gemini_defaults
             )
 
     elif provider == AIProvider.CLAUDE:
@@ -193,7 +208,7 @@ def create_llm(
             model=model,
             api_key=api_key,
             temperature=temperature,
-            timeout=30.0,
+            timeout=240.0,
             max_retries=1,
         )
     else:
