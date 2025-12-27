@@ -2,7 +2,12 @@
 import time
 import json
 from typing import Tuple, Optional, Any
-from langchain.callbacks.base import BaseCallbackHandler
+try:
+    # LangChain >= 0.2 uses langchain_core
+    from langchain_core.callbacks import BaseCallbackHandler
+except Exception:  # pragma: no cover
+    # Fallback for older LangChain
+    from langchain.callbacks.base import BaseCallbackHandler
 
 from app.models import ChatRequest, ChatResponse, AiResponse, ChatRole, AIProvider, TokenAiServiceUsageInfo
 from app.services.llm_service import create_llm, convert_to_langchain_message, extract_token_usage

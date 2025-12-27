@@ -16,8 +16,10 @@ sys.stderr = io.StringIO()
 
 warnings.filterwarnings('ignore', category=Warning)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+import time
 from aiocache import Cache
 
 from app.config import settings, logger
@@ -109,6 +111,26 @@ app.include_router(chat.router)
 app.include_router(cache.router)
 
 
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        method = request.method
+        path = request.url.path
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            duration_ms = (time.perf_counter() - start) * 1000
+            logger.info(f"{method} {path} -> {status} in {duration_ms:.1f}ms")
+            return response
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start) * 1000
+            logger.exception(f"{method} {path} -> 500 in {duration_ms:.1f}ms: {e}")
+            raise
+
+
+app.add_middleware(RequestLoggingMiddleware)
+
+
 @app.get(
     "/",
     tags=["root"],
@@ -154,6 +176,19 @@ async def health_check():
     }
 
 
+@app.on_event("startup")
+async def on_startup():
+    logger.info("🚀 FastAPI app startup complete. Docs at /swagger")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    logger.info("🛑 FastAPI app shutdown")
+
+
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
