@@ -97,6 +97,37 @@ class ChatRequest(BaseModel):
         "2024-08-01-preview",
         description="Azure OpenAI API version (default: 2024-08-01-preview)"
     )
+    provider_endpoint: Optional[str] = Field(
+        None,
+        description="Optional custom provider endpoint/base URL (e.g., an OpenAI-compatible proxy). If provided, it overrides the default API base for supported providers."
+    )
+    # Alias for legacy clients that send provider_url
+    provider_url: Optional[str] = Field(
+        None,
+        description="Alias of provider_endpoint used by some clients",
+    )
+    # Vertex AI (Google Cloud) support
+    vertex_project: Optional[str] = Field(
+        None,
+        description="Google Cloud project ID for Vertex AI (used when calling Gemini via Vertex)"
+    )
+    vertex_location: Optional[str] = Field(
+        "us-central1",
+        description="Google Cloud region for Vertex AI (default: us-central1)"
+    )
+    oauth_token: Optional[str] = Field(
+        None,
+        description="OAuth access token (ya29...) for Vertex AI. If provided, will be used instead of api_key for Gemini via Vertex."
+    )
+
+    @field_validator("provider_endpoint", mode="after")
+    @classmethod
+    def fill_provider_endpoint_from_url(cls, v, info):
+        # If provider_endpoint is not provided but provider_url is, use it
+        if not v:
+            provider_url = info.data.get("provider_url") if hasattr(info, "data") else None
+            return provider_url or v
+        return v
 
     def get_provider(self) -> AIProvider:
         """
@@ -130,7 +161,8 @@ class ChatRequest(BaseModel):
                         {"role": "system", "content": "You are a helpful assistant."},
                         {"role": "user", "content": "Hello!"}
                     ],
-                    "temperature": 0.7
+                    "temperature": 0.7,
+                    "provider_endpoint": "https://api.my-proxy.example/v1"
                 },
                 {
                     "model": "gemini-pro",

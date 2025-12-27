@@ -1,7 +1,7 @@
 """LLM service for managing AI model interactions"""
 import mimetypes
 import os
-from typing import Union, List
+from typing import Union, List, Optional
 from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_anthropic import ChatAnthropic
@@ -102,7 +102,11 @@ def create_llm(
     temperature: float = 0.7,
     context_cache_name: str | None = None,
     azure_endpoint: str | None = None,
-    azure_api_version: str = "2024-08-01-preview"
+    azure_api_version: str = "2024-08-01-preview",
+    provider_endpoint: str | None = None,
+    vertex_project: Optional[str] = None,
+    vertex_location: Optional[str] = None,
+    oauth_token: Optional[str] = None,
 ):
     """
     Create the appropriate LLM client based on the provider.
@@ -136,7 +140,7 @@ def create_llm(
                 # OpenAI Reasoning models (o1, o3, o4, gpt-5) use "low", "medium", or "high" for reasoning effort
                 # Using "low" favors speed and economical token usage
                 model_kwargs = {"reasoning_effort": "low"}
-                return ChatOpenAI(
+                kwargs = dict(
                     model=model,
                     api_key=api_key,
                     temperature=1.0,
@@ -144,19 +148,80 @@ def create_llm(
                     timeout=240.0,
                     max_retries=1,
                 )
+                if provider_endpoint:
+                    kwargs["base_url"] = provider_endpoint
+                try:
+                    return ChatOpenAI(**kwargs)
+                except TypeError:
+                    if provider_endpoint:
+                        logger.warning("provider_endpoint not supported for OpenAI in this LangChain version; proceeding without it")
+                        kwargs.pop("base_url", None)
+                        return ChatOpenAI(**kwargs)
+                    raise
             else:
-                return ChatOpenAI(
+                kwargs = dict(
                     model=model,
                     api_key=api_key,
                     temperature=temperature,
                     timeout=240.0,
                     max_retries=1,
                 )
+                if provider_endpoint:
+                    kwargs["base_url"] = provider_endpoint
+                try:
+                    return ChatOpenAI(**kwargs)
+                except TypeError:
+                    if provider_endpoint:
+                        logger.warning("provider_endpoint not supported for OpenAI in this LangChain version; proceeding without it")
+                        kwargs.pop("base_url", None)
+                        return ChatOpenAI(**kwargs)
+                    raise
 
     elif provider == AIProvider.GEMINI:
         # GEMINI LOGIC WITH CACHE
-        # Always use ChatGoogleGenerativeAI with API key
+        # Prefer Vertex AI path if explicitly requested or inferred
+        use_vertex = False
+        vertex_hint = (provider_endpoint or "").find("aiplatform.googleapis.com") != -1 if provider_endpoint else False
+        if oauth_token or vertex_project or vertex_hint:
+            use_vertex = True
 
+        if use_vertex:
+            try:
+                from langchain_google_vertexai import ChatVertexAI
+            except Exception as e:
+                raise ValueError(
+                    "Vertex AI support requires 'langchain-google-vertexai'. "
+                    "Add it to dependencies and install."
+                ) from e
+
+            # Build credentials if oauth_token provided; else rely on ADC
+            credentials = None
+            if oauth_token:
+                try:
+                    from google.oauth2.credentials import Credentials
+                    credentials = Credentials(token=oauth_token)
+                except Exception as e:
+                    logger.warning(f"Could not construct OAuth credentials from token: {e}. Falling back to ADC.")
+
+            project = vertex_project or os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCLOUD_PROJECT")
+            location = vertex_location or os.getenv("GOOGLE_CLOUD_REGION") or "us-central1"
+
+            if not project:
+                raise ValueError("Vertex AI selected but no project provided. Set vertex_project or GOOGLE_CLOUD_PROJECT.")
+
+            logger.info(f"Using Vertex AI Gemini model via project '{project}' in '{location}'")
+
+            return ChatVertexAI(
+                model=model,
+                project=project,
+                location=location,
+                temperature=temperature,
+                max_retries=1,
+                request_timeout=240.0,
+                credentials=credentials,
+            )
+
+        # Otherwise, use Google AI Studio client
         # Configure thinking_budget for Pro models (not Flash or Lite)
         model_lower = model.lower()
         thinking_config = {}
@@ -178,6 +243,9 @@ def create_llm(
             "top_p": 0.95
         }
         logger.debug(f"Applying Gemini defaults optimized for speed: {gemini_defaults}")
+
+        if provider_endpoint:
+            logger.warning("provider_endpoint is not supported for Gemini AI Studio client; ignoring this parameter")
 
         if context_cache_name:
             logger.debug(f"Using Gemini Context Cache: {context_cache_name}")
@@ -204,13 +272,23 @@ def create_llm(
             )
 
     elif provider == AIProvider.CLAUDE:
-        return ChatAnthropic(
+        # Allow custom base URL for proxies if provided
+        kwargs = dict(
             model=model,
             api_key=api_key,
             temperature=temperature,
             timeout=240.0,
             max_retries=1,
         )
+        if provider_endpoint:
+            kwargs_with_base = dict(kwargs)
+            kwargs_with_base["base_url"] = provider_endpoint
+            try:
+                return ChatAnthropic(**kwargs_with_base)
+            except TypeError:
+                logger.warning("provider_endpoint not supported for Anthropic in this LangChain version; proceeding without it")
+                # fall through to default
+        return ChatAnthropic(**kwargs)
     else:
         logger.error(f"Unsupported provider requested: {provider}")
         raise ValueError(f"Unsupported provider: {provider}")

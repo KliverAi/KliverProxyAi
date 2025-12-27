@@ -4,6 +4,7 @@ from aiocache import cached
 from aiocache.serializers import PickleSerializer
 
 from app.models import ChatRequest, AiResponse
+from app.models.base import AIProvider
 from app.services.chat_service import process_chat_request
 from app.config import logger
 
@@ -61,6 +62,18 @@ async def chat(chat_request: ChatRequest) -> AiResponse:
         HTTPException 500: Error processing chat request
     """
     try:
+        # Early validation for common credential mismatches
+        if chat_request.get_provider() == AIProvider.GEMINI:
+            key = (chat_request.api_key or "").strip()
+            is_oauth = key.startswith("ya29.") or (chat_request.oauth_token or "").startswith("ya29.")
+            is_vertex_endpoint = (chat_request.provider_endpoint or "").find("aiplatform.googleapis.com") != -1
+            vertex_params = chat_request.vertex_project is not None
+
+            if is_oauth and not (is_vertex_endpoint or vertex_params):
+                raise ValueError(
+                    "Token OAuth detectado (ya29...) pero no se indicó Vertex (provider_endpoint de aiplatform o vertex_project). "
+                    "Agrega vertex_project/location o provider_endpoint de Vertex, o usa API key AIza... de AI Studio."
+                )
         return await process_chat_request(chat_request)
 
     except ValueError as e:
@@ -71,8 +84,23 @@ async def chat(chat_request: ChatRequest) -> AiResponse:
         )
     except Exception as e:
         # Capture full stack trace to aid debugging
+        msg = str(e)
         logger.exception(f"❌ Unexpected {type(e).__name__} while processing chat request")
+
+        # Map common provider auth errors to 401 for clarity
+        auth_markers = [
+            "API key not valid",              # Google Gemini
+            "API_KEY_INVALID",                # Google error code
+            "Incorrect API key provided",     # OpenAI
+            "invalid_api_key",                # Generic marker
+        ]
+        if any(m in msg for m in auth_markers):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Authentication failed: {msg}"
+            )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing chat request: {str(e)}"
+            detail=f"Error processing chat request: {msg}"
         )

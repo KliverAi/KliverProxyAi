@@ -13,16 +13,18 @@ dependencies = [
     "langchain>=0.3.0",
     "langchain-openai>=0.3.0",
     "langchain-google-genai>=2.0.0",
+    "langchain-google-vertexai>=3.2.0",
+    "google-auth (>=2.35.0,<3.0.0)",
     "langchain-anthropic>=0.3.0",
     "langchain-core>=0.3.0",
     "pydantic>=2.10.0",
     "python-dotenv>=1.0.1",
     "azure-monitor-opentelemetry>=1.6.0",
-    "google-generativeai (>=0.8.5,<0.9.0)",
-    "python-multipart (>=0.0.20,<0.0.21)",
-    "pypdf2 (>=3.0.1,<4.0.0)",
-    "fastapi-cache2 (>=0.2.2,<0.3.0)",
-    "aiocache (>=0.12.3,<0.13.0)"
+    "google-generativeai (>=0.8.5)",
+    "python-multipart (>=0.0.20)",
+    "pypdf2 (>=3.0.1)",
+    "fastapi-cache2 (>=0.2.2)",
+    "aiocache (>=0.12.3)"
 ]
 
 [tool.poetry]
@@ -43,4 +45,3 @@ pytest = "^8.4.2"
 pytest-asyncio = "^1.2.0"
 pytest-cov = "^7.0.0"
 reportlab = "^4.4.4"
-

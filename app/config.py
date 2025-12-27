@@ -1,6 +1,7 @@
 """Application configuration and telemetry setup"""
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -78,6 +79,34 @@ def configure_logging():
     return logging.getLogger("kliver.ai")
 
 
+def log_dependency_versions(logger: logging.Logger) -> None:
+    """Log key dependency versions to help diagnose env drift"""
+    pkgs = [
+        "fastapi",
+        "uvicorn",
+        "pydantic",
+        "langchain",
+        "langchain-core",
+        "langchain-openai",
+        "langchain-anthropic",
+        "langchain-google-genai",
+        "langchain-google-vertexai",
+        "google-generativeai",
+        "google-auth",
+        "aiocache",
+        "fastapi-cache2",
+    ]
+    parts = []
+    for name in pkgs:
+        try:
+            parts.append(f"{name}={pkg_version(name)}")
+        except PackageNotFoundError:
+            parts.append(f"{name}=not-installed")
+        except Exception as e:
+            parts.append(f"{name}=error({e.__class__.__name__})")
+    logger.info("Deps: " + ", ".join(parts))
+
+
 def configure_telemetry():
     """Configure Azure Monitor Application Insights and return tracer"""
     if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
@@ -118,3 +147,8 @@ def configure_langsmith():
 logger = configure_logging()
 tracer = configure_telemetry()
 configure_langsmith()
+try:
+    log_dependency_versions(logger)
+except Exception:
+    # Never fail import due to version logging
+    pass

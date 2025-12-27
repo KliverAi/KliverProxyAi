@@ -102,6 +102,10 @@ async def process_chat_request(request: ChatRequest) -> AiResponse:
         context_cache_name=request.context_cache_name,
         azure_endpoint=request.azure_endpoint,
         azure_api_version=request.azure_api_version,
+        provider_endpoint=request.provider_endpoint,
+        vertex_project=request.vertex_project,
+        vertex_location=request.vertex_location,
+        oauth_token=request.oauth_token or (api_key if (provider == AIProvider.GEMINI and (api_key or "").startswith("ya29.")) else None),
     )
 
     # Convert ChatMessage objects to LangChain message format
