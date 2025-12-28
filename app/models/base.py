@@ -11,6 +11,7 @@ class ChatRole(str, Enum):
     DEVELOPER = "developer"
 
 
+
 class AIProvider(str, Enum):
     """Enum for AI providers"""
     OPENAI = "openai"
