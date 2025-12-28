@@ -1,67 +1,76 @@
-name: Deploy Azure
+name: Deploy to Azure App Service
 
 on:
   push:
-    branches: [qa, main]
+    branches: [main]
+  pull_request:
+    branches: [dev]
+
+env:
+  ACR_NAME: kliveraiacr
+  ACR_LOGIN_SERVER: kliveraiacr.azurecr.io
 
 jobs:
-  build-and-push-to-acr:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Determinar tag según la rama
-      - name: Set image tag
-        id: tag
+      - name: Determine environment
+        id: env
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "tag=latest" >> $GITHUB_OUTPUT
-          else
-            echo "tag=qa" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "name=prod" >> $GITHUB_OUTPUT
+            echo "app=kliver-proxy-ai-prod" >> $GITHUB_OUTPUT
+            echo "rg=kliverai-prod-rg" >> $GITHUB_OUTPUT
+            echo "tag=prod" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "pull_request" && "${{ github.base_ref }}" == "dev" ]]; then
+            echo "name=dev" >> $GITHUB_OUTPUT
+            echo "app=kliver-proxy-ai-dev" >> $GITHUB_OUTPUT
+            echo "rg=kliverai-dev-rg" >> $GITHUB_OUTPUT
+            echo "tag=dev" >> $GITHUB_OUTPUT
           fi
 
-      # Login Azure
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Login al ACR
-      - name: Login to ACR
-        run: |
-          az acr login --name kliverairegistry
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_NAME }}
 
-      # Build Docker
       - name: Build Docker image
         run: |
-          IMAGE="kliverairegistry.azurecr.io/kliver-proxy-ai:${{ steps.tag.outputs.tag }}"
-          echo "Building $IMAGE"
-          docker build -t $IMAGE .
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }} .
 
-      # Push Docker
-      - name: Push Docker image
+      - name: Push Docker image to ACR
         run: |
-          IMAGE="kliverairegistry.azurecr.io/kliver-proxy-ai:${{ steps.tag.outputs.tag }}"
-          echo "Pushing $IMAGE"
-          docker push $IMAGE
-          echo "🚀 Image published to Azure ACR: $IMAGE"
+          docker push ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }}
+          echo "✅ Image pushed"
 
-      # Update App Service with new container image
-      - name: Update App Service
+      - name: Deploy to App Service
         run: |
           az webapp config container set \
-            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --docker-custom-image-name kliverairegistry.azurecr.io/kliver-proxy-ai:${{ steps.tag.outputs.tag }} \
-            --docker-registry-server-url https://kliverairegistry.azurecr.io
-          echo "✅ App Service updated with new image"
+            --name ${{ steps.env.outputs.app }} \
+            --resource-group ${{ steps.env.outputs.rg }} \
+            --docker-custom-image-name ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }} \
+            --docker-registry-server-url https://${{ env.ACR_LOGIN_SERVER }}
           
-      # Restart App Service to pull the new image
-      - name: Restart App Service
+          echo "✅ Deployed to ${{ steps.env.outputs.name }}"
+
+      - name: Verify deployment
         run: |
-          az webapp restart \
-            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
-          echo "✅ App Service restarted"
+          echo "Waiting for app to start..."
+          sleep 45
+          
+          APP_URL="https://${{ steps.env.outputs.app }}.azurewebsites.net"
+          if curl -f -s --max-time 10 "$APP_URL/health" > /dev/null; then
+            echo "✅ Deployment successful - $APP_URL"
+          else
+            echo "⚠️ Health check failed, check logs"
+          fi
+      
+      - name: Logout
+        run: az logout
