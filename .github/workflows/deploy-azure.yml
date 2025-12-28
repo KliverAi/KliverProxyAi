@@ -23,13 +23,13 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "name=prod" >> $GITHUB_OUTPUT
-            echo "app=kliver-proxy-ai-prod" >> $GITHUB_OUTPUT
+            echo "app=kliverai-prod-proxy-api" >> $GITHUB_OUTPUT
             echo "rg=kliverai-prod-rg" >> $GITHUB_OUTPUT
             echo "tag=prod" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "pull_request" && "${{ github.base_ref }}" == "dev" ]]; then
             echo "name=dev" >> $GITHUB_OUTPUT
-            echo "app=kliver-proxy-ai-dev" >> $GITHUB_OUTPUT
-            echo "rg=kliverai-dev-rg" >> $GITHUB_OUTPUT
+            echo "app=kliverai-devqa-proxy-api" >> $GITHUB_OUTPUT
+            echo "rg=kliverai-shared-rg" >> $GITHUB_OUTPUT
             echo "tag=dev" >> $GITHUB_OUTPUT
           fi
 
@@ -55,8 +55,8 @@ jobs:
           az webapp config container set \
             --name ${{ steps.env.outputs.app }} \
             --resource-group ${{ steps.env.outputs.rg }} \
-            --docker-custom-image-name ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }} \
-            --docker-registry-server-url https://${{ env.ACR_LOGIN_SERVER }}
+            --container-image-name ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }} \
+            --container-registry-url https://${{ env.ACR_LOGIN_SERVER }}
           
           echo "✅ Deployed to ${{ steps.env.outputs.name }}"
 
