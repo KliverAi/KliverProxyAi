@@ -73,4 +73,5 @@ jobs:
           fi
       
       - name: Logout
+      
         run: az logout
