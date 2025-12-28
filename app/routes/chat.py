@@ -64,15 +64,22 @@ async def chat(chat_request: ChatRequest) -> AiResponse:
     try:
         # Early validation for common credential mismatches
         if chat_request.get_provider() == AIProvider.GEMINI:
+            import os
             key = (chat_request.api_key or "").strip()
             is_oauth = key.startswith("ya29.") or (chat_request.oauth_token or "").startswith("ya29.")
             is_vertex_endpoint = (chat_request.provider_endpoint or "").find("aiplatform.googleapis.com") != -1
-            vertex_params = chat_request.vertex_project is not None
+            # Check for vertex_project in request OR environment variables
+            vertex_params = (
+                chat_request.vertex_project is not None or
+                os.getenv("GOOGLE_CLOUD_PROJECT") is not None or
+                os.getenv("GCLOUD_PROJECT") is not None
+            )
 
             if is_oauth and not (is_vertex_endpoint or vertex_params):
                 raise ValueError(
                     "Token OAuth detectado (ya29...) pero no se indicó Vertex (provider_endpoint de aiplatform o vertex_project). "
-                    "Agrega vertex_project/location o provider_endpoint de Vertex, o usa API key AIza... de AI Studio."
+                    "Agrega vertex_project/location o provider_endpoint de Vertex, o configura GOOGLE_CLOUD_PROJECT en variables de entorno, "
+                    "o usa API key AIza... de AI Studio."
                 )
         return await process_chat_request(chat_request)
 

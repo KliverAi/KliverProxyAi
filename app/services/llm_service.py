@@ -222,11 +222,18 @@ def create_llm(
             )
 
         # Otherwise, use Google AI Studio client
-        # Configure thinking_budget for Pro models (not Flash or Lite)
+        # Configure thinking parameters based on model type
         model_lower = model.lower()
         thinking_config = {}
 
-        if "pro" in model_lower and "flash" not in model_lower and "lite" not in model_lower:
+        # Gemini 3.x models use thinking_level instead of thinking_budget
+        if "gemini-3" in model_lower or "gemini-flash-3" in model_lower:
+            # gemini-3-flash-preview and other Gemini 3 models use thinking_level
+            # Options: minimal, low, medium, high
+            # Use minimal for speed and cost efficiency
+            thinking_config["thinking_level"] = "minimal"
+            logger.debug(f"Gemini 3 model detected - Setting thinking_level: minimal")
+        elif "pro" in model_lower and "flash" not in model_lower and "lite" not in model_lower:
             # gemini-2.5-pro uses thinking budget for complex reasoning
             thinking_config["thinking_budget"] = 8192  # Balanced budget for complex tasks
             logger.debug(f"Gemini Pro model detected - Setting thinking_budget: 8192 tokens")

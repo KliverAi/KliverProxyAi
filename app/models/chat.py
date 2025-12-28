@@ -1,6 +1,6 @@
 """Chat models for the API"""
 from typing import List, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.base import ChatRole, AIProvider
 
@@ -120,14 +120,15 @@ class ChatRequest(BaseModel):
         description="OAuth access token (ya29...) for Vertex AI. If provided, will be used instead of api_key for Gemini via Vertex."
     )
 
-    @field_validator("provider_endpoint", mode="after")
+    @model_validator(mode='before')
     @classmethod
-    def fill_provider_endpoint_from_url(cls, v, info):
-        # If provider_endpoint is not provided but provider_url is, use it
-        if not v:
-            provider_url = info.data.get("provider_url") if hasattr(info, "data") else None
-            return provider_url or v
-        return v
+    def fill_provider_endpoint_from_url(cls, data):
+        """Copy provider_url to provider_endpoint if provider_endpoint is not set"""
+        if isinstance(data, dict):
+            # If provider_endpoint is not provided but provider_url is, use it
+            if not data.get("provider_endpoint") and data.get("provider_url"):
+                data["provider_endpoint"] = data["provider_url"]
+        return data
 
     def get_provider(self) -> AIProvider:
         """
