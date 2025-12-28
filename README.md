@@ -21,9 +21,12 @@ poetry install
 
 # Run the server
 poetry run python run.py
+
+# Optional: choose host/port
+PORT=5030 HOST=0.0.0.0 poetry run python run.py
 ```
 
-Server runs at `http://localhost:8000` with docs at `http://localhost:8000/docs`.
+Server runs at `http://localhost:8000` (or `http://localhost:$PORT`) with docs at `/swagger`.
 
 ### Docker
 

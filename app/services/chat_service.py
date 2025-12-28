@@ -2,7 +2,12 @@
 import time
 import json
 from typing import Tuple, Optional, Any
-from langchain.callbacks.base import BaseCallbackHandler
+try:
+    # LangChain >= 0.2 uses langchain_core
+    from langchain_core.callbacks import BaseCallbackHandler
+except Exception:  # pragma: no cover
+    # Fallback for older LangChain
+    from langchain.callbacks.base import BaseCallbackHandler
 
 from app.models import ChatRequest, ChatResponse, AiResponse, ChatRole, AIProvider, TokenAiServiceUsageInfo
 from app.services.llm_service import create_llm, convert_to_langchain_message, extract_token_usage
@@ -95,6 +100,12 @@ async def process_chat_request(request: ChatRequest) -> AiResponse:
         api_key=api_key,
         temperature=request.temperature,
         context_cache_name=request.context_cache_name,
+        azure_endpoint=request.azure_endpoint,
+        azure_api_version=request.azure_api_version,
+        provider_endpoint=request.provider_endpoint,
+        vertex_project=request.vertex_project,
+        vertex_location=request.vertex_location,
+        oauth_token=request.oauth_token or (api_key if (provider == AIProvider.GEMINI and (api_key or "").startswith("ya29.")) else None),
     )
 
     # Convert ChatMessage objects to LangChain message format
@@ -278,6 +289,55 @@ def _fix_integers_recursive(data, schema):
         return data
 
 
+def _normalize_response_content(content: Any) -> str:
+    """
+    Normalize LLM response content to ensure it's always a string.
+    
+    Some providers (like Gemini) may return content as:
+    - A simple string: "Hello world"
+    - A list of content blocks: [{'type': 'text', 'text': 'Hello world'}]
+    - Other structured formats
+    
+    This function extracts the text and returns it as a string.
+    """
+    # If already a string, return as-is
+    if isinstance(content, str):
+        return content
+    
+    # If it's a list of content blocks, extract text
+    if isinstance(content, list):
+        text_parts = []
+        for block in content:
+            if isinstance(block, dict):
+                # Handle Gemini format: {'type': 'text', 'text': '...'}
+                if 'text' in block:
+                    text_parts.append(str(block['text']))
+                # Handle other dict formats that might have 'content'
+                elif 'content' in block:
+                    text_parts.append(str(block['content']))
+                else:
+                    # If we can't find a text field, stringify the whole block
+                    text_parts.append(str(block))
+            elif isinstance(block, str):
+                text_parts.append(block)
+            else:
+                # For any other type, convert to string
+                text_parts.append(str(block))
+        
+        return ''.join(text_parts)
+    
+    # For any other type (dict, object, etc.), convert to string
+    if isinstance(content, dict):
+        # Try to extract 'text' or 'content' field if present
+        if 'text' in content:
+            return str(content['text'])
+        elif 'content' in content:
+            return str(content['content'])
+    
+    # Last resort: convert to string
+    return str(content)
+
+
 def _serialize_structured_response(response_obj) -> str:
     """
     Serialize structured output response, handling LangChain's internal wrapper structure.
@@ -400,7 +460,10 @@ async def _process_regular_chat(
         log_msg += f" | Thinking: {token_usage.thoughts_token_count}"
     logger.info(log_msg)
 
-    return response.content, token_usage
+    # Normalize content to ensure it's a string
+    content = _normalize_response_content(response.content)
+
+    return content, token_usage
 
 
 def _create_structured_llm(llm, json_schema: dict, provider: AIProvider):

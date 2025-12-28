@@ -1,6 +1,7 @@
 """Application configuration and telemetry setup"""
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -13,7 +14,37 @@ class Settings:
     # Application info
     APP_NAME: str = "Kliver.AI Chat API"
     APP_VERSION: str = "3.0.0"
-    APP_DESCRIPTION: str = "API for chat interactions using LangChain with OpenAI, Google Gemini, and Anthropic Claude support"
+    APP_DESCRIPTION: str = """
+Multi-provider AI Chat API powered by LangChain.
+
+## 🚀 Features
+
+- **Multi-Provider Support**: OpenAI, Google Gemini, and Anthropic Claude
+- **Structured Output**: Get JSON responses with custom schemas
+- **Context Caching**: Efficient processing of large documents (Gemini)
+- **Auto Caching**: 2-hour TTL for request/response pairs
+- **File Processing**: Images, videos, audio, PDFs, and more
+- **Telemetry**: Azure Monitor Application Insights integration
+- **LangSmith Tracing**: Optional debugging and observability
+
+## 📚 Supported Models
+
+### OpenAI
+- gpt-4, gpt-4-turbo, gpt-3.5-turbo
+- o1-preview, o1-mini
+
+### Google Gemini
+- gemini-1.5-pro, gemini-1.5-flash
+- gemini-2.0-flash-exp
+
+### Anthropic Claude
+- claude-3-5-sonnet-20241022
+- claude-3-opus, claude-3-sonnet
+
+## 🔗 Quick Start
+
+Check the `/swagger` endpoint for interactive documentation and try out the API!
+    """
 
     # Azure Monitor Application Insights
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
@@ -46,6 +77,34 @@ def configure_logging():
     logging.getLogger("absl").setLevel(logging.ERROR)
 
     return logging.getLogger("kliver.ai")
+
+
+def log_dependency_versions(logger: logging.Logger) -> None:
+    """Log key dependency versions to help diagnose env drift"""
+    pkgs = [
+        "fastapi",
+        "uvicorn",
+        "pydantic",
+        "langchain",
+        "langchain-core",
+        "langchain-openai",
+        "langchain-anthropic",
+        "langchain-google-genai",
+        "langchain-google-vertexai",
+        "google-generativeai",
+        "google-auth",
+        "aiocache",
+        "fastapi-cache2",
+    ]
+    parts = []
+    for name in pkgs:
+        try:
+            parts.append(f"{name}={pkg_version(name)}")
+        except PackageNotFoundError:
+            parts.append(f"{name}=not-installed")
+        except Exception as e:
+            parts.append(f"{name}=error({e.__class__.__name__})")
+    logger.info("Deps: " + ", ".join(parts))
 
 
 def configure_telemetry():
@@ -88,3 +147,8 @@ def configure_langsmith():
 logger = configure_logging()
 tracer = configure_telemetry()
 configure_langsmith()
+try:
+    log_dependency_versions(logger)
+except Exception:
+    # Never fail import due to version logging
+    pass

@@ -1,0 +1,76 @@
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [dev]
+
+env:
+  ACR_NAME: kliveraiacr
+  ACR_LOGIN_SERVER: kliveraiacr.azurecr.io
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "name=prod" >> $GITHUB_OUTPUT
+            echo "app=kliverai-prod-proxy-api" >> $GITHUB_OUTPUT
+            echo "rg=kliverai-prod-rg" >> $GITHUB_OUTPUT
+            echo "tag=prod" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "pull_request" && "${{ github.base_ref }}" == "dev" ]]; then
+            echo "name=dev" >> $GITHUB_OUTPUT
+            echo "app=kliverai-devqa-proxy-api" >> $GITHUB_OUTPUT
+            echo "rg=kliverai-shared-rg" >> $GITHUB_OUTPUT
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }} .
+
+      - name: Push Docker image to ACR
+        run: |
+          docker push ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }}
+          echo "✅ Image pushed"
+
+      - name: Deploy to App Service
+        run: |
+          az webapp config container set \
+            --name ${{ steps.env.outputs.app }} \
+            --resource-group ${{ steps.env.outputs.rg }} \
+            --container-image-name ${{ env.ACR_LOGIN_SERVER }}/kliver-proxy-ai:${{ steps.env.outputs.tag }} \
+            --container-registry-url https://${{ env.ACR_LOGIN_SERVER }}
+          
+          echo "✅ Deployed to ${{ steps.env.outputs.name }}"
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for app to start..."
+          sleep 45
+          
+          APP_URL="https://${{ steps.env.outputs.app }}.azurewebsites.net"
+          if curl -f -s --max-time 10 "$APP_URL/health" > /dev/null; then
+            echo "✅ Deployment successful - $APP_URL"
+          else
+            echo "⚠️ Health check failed, check logs"
+          fi
+      
+      - name: Logout
+        run: az logout
